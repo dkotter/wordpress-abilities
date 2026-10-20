@@ -1,0 +1,108 @@
+# CI for the wordpress/abilities package — skeleton authored in WP0.
+#
+# The `phpunit` job is wired for two wp-env configurations
+# (.wp-env.trunk.json / .wp-env.stable.json), which are added by WP2; it
+# skips itself automatically until those config files exist. WP2 completes
+# the environment plumbing end-to-end.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  phpcs:
+    name: WPCS (WordPress-Core ruleset)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-progress
+
+      - name: Run PHPCS
+        run: composer run lint:phpcs
+
+  phpstan:
+    name: PHPStan (with phpstan-wordpress)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-progress
+
+      - name: Run PHPStan
+        run: composer run lint:phpstan
+
+  verify-manifest:
+    name: Verify manifest (placeholder until enforcement lands)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify manifest
+        run: php bin/verify-manifest.php
+
+  phpunit:
+    name: PHPUnit (wp-env: ${{ matrix.wp }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        wp: [trunk, stable]
+    steps:
+      - uses: actions/checkout@v4
+
+      # WP2 adds .wp-env.trunk.json / .wp-env.stable.json; skip until they exist.
+      - name: Check for wp-env config
+        id: config
+        run: |
+          if [ -f ".wp-env.${{ matrix.wp }}.json" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::.wp-env.${{ matrix.wp }}.json not present yet (added by WP2) — skipping job."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.config.outputs.skip != 'true'
+        name: Set up PHP (host-side tooling)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - if: steps.config.outputs.skip != 'true'
+        name: Set up Node (wp-env runner)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - if: steps.config.outputs.skip != 'true'
+        name: Install Composer dependencies
+        run: composer install --no-interaction --no-progress
+
+      # wp-env supports selecting a config file with the global --config
+      # option (verified against current wp-env docs).
+      - if: steps.config.outputs.skip != 'true'
+        name: Start wp-env (WordPress ${{ matrix.wp }})
+        run: npx wp-env start --config=.wp-env.${{ matrix.wp }}.json --update
+
+      # WP2 finalizes the in-container test plumbing (bootstrap, suite wiring);
+      # the exact cwd assumes the package is mounted as a plugin by wp-env.
+      - if: steps.config.outputs.skip != 'true'
+        name: Run PHPUnit inside wp-env
+        run: npx wp-env run cli --env-cwd=wp-content/plugins/wordpress-abilities composer run test

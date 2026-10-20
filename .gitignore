@@ -1,0 +1,4 @@
+vendor/
+.wp-env/
+node_modules/
+.phpunit.result.cache

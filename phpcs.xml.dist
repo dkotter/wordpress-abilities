@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<ruleset name="WordPress Abilities">
+	<description>Coding standards for the wordpress/abilities package (WordPress Core ruleset).</description>
+
+	<file>src/</file>
+	<file>tests/</file>
+
+	<arg name="extensions" value="php"/>
+	<arg value="sp"/>
+	<arg name="parallel" value="8"/>
+
+	<rule ref="WordPress-Core">
+		<!--
+			The package is PSR-4 (WordPress\Abilities\ => src/, see composer.json),
+			so core's class-wp-*.php file naming convention does not apply here.
+			This exclusion is pre-authorized (HANDOFF.md, WP0). No other sniffs
+			excluded.
+		-->
+		<exclude name="WordPress.Files.FileName"/>
+	</rule>
+
+	<!-- Canonical text domain for this package. -->
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="default"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>

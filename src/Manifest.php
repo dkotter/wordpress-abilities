@@ -56,6 +56,8 @@ final class Manifest {
 				'core_since'     => '7.2',
 				'requires'       => array( 'show_in_abilities' ),
 				'renamed_from'   => null,
+				// WP2-flagged for human confirmation: proposal URL to verify against
+				// the landed core work (wordpress-develop PR 12195) before release.
 				'proposal'       => 'https://github.com/WordPress/wordpress-develop/pull/12195',
 			),
 			'wp/post-create'     => array(

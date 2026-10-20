@@ -23,6 +23,12 @@
  * Support\Features) when an ability requires the feature and core lacks it.
  * Never autoloaded.
  *
+ * Removal cue: delete this file and its Features::$polyfills map entry when
+ * the package's minimum supported WordPress version rises to 7.2 — every
+ * consuming site then has core's declared WP_Post_Type property
+ * (`wp_has_abilities` hosts ≥ 7.2), the polyfill can never load again, and
+ * Features::is_available() reports the native property.
+ *
  * @package WordPress\Abilities
  */
 

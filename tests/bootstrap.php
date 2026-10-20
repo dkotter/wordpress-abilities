@@ -2,19 +2,17 @@
 /**
  * PHPUnit bootstrap for the wordpress/abilities package test suite.
  *
- * wp-phpunit/yoast-phpunit-polyfills pattern: locate the WordPress core
- * PHPUnit test suite (wp-env provides WP_TESTS_DIR in the tests-cli
- * container; wp-phpunit provides WP_PHPUNIT__TESTS_DIR on the host), load
- * the package Composer autoloader, register the stable-env API fixture via
- * muplugins_loaded, boot the suite, then load the pending-class stand-ins.
+ * Locates the WordPress core PHPUnit test suite (wp-env provides WP_TESTS_DIR
+ * in the tests-cli container; wp-phpunit provides WP_PHPUNIT__TESTS_DIR on
+ * the host), loads the package Composer autoloader and the PHPUnit
+ * polyfills, registers the fixture Abilities API via muplugins_loaded, then
+ * boots core.
  *
- * Stand-in loading is CRITICALLY self-removing: the concrete fixture
- * doubles (tests/Fixtures/pending-class-doubles.php) load only when the
- * real class does not exist — and the class_exists() call autoloads the
- * real class once it exists at the PSR-4 path (src/Content/*.php, WP3/WP4).
- * The .stubs/pending-package-classes.php placeholder then loads ONLY if the
- * class is STILL undefined (its remaining purpose: PHPStan bootstrapFiles,
- * plus a backstop when the API itself is absent and WP_Ability is missing).
+ * The fixture API is self-guarding: tests/Fixtures/mu-plugins/
+ * load-abilities-api.php no-ops when a real Abilities API is already
+ * provided (trunk core or a consumer plugin). Environments with the
+ * mu-plugins mapping load it as a real mu-plugin; the hook below is a
+ * backstop for runs without the mapping (e.g. host wp-phpunit).
  *
  * @package WordPress\Abilities
  */
@@ -56,19 +54,9 @@ if ( 'off' !== $_fixture_api_mode ) {
 		'muplugins_loaded',
 		static function (): void {
 			// Guarded no-op when the API already exists (trunk core / consumer).
-			require_once dirname( __DIR__ ) . '/Fixtures/mu-plugins/load-abilities-api.php';
+			require_once __DIR__ . '/Fixtures/mu-plugins/load-abilities-api.php';
 		}
 	);
 }
 
 require $_tests_dir . '/includes/bootstrap.php';
-
-// Self-removing stand-ins (see file headers); must run after WP boot so
-// WP_Ability exists when the doubles' parent chain resolves.
-if ( ! class_exists( 'WordPress\Abilities\Content\Content_Query' ) ) {
-	if ( class_exists( 'WP_Ability' ) ) {
-	}
-}
-// Task-specified shim: ONLY load when the class is still undefined.
-if ( ! class_exists( 'WordPress\Abilities\Content\Content_Query' ) ) {
-}

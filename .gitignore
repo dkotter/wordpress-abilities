@@ -1,4 +1,6 @@
 vendor/
 .wp-env/
 node_modules/
-.phpunit.result.cache.DS_Store
+.phpunit.result.cache
+.DS_Store
+tools/out/

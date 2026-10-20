@@ -67,10 +67,8 @@ require $_tests_dir . '/includes/bootstrap.php';
 // WP_Ability exists when the doubles' parent chain resolves.
 if ( ! class_exists( 'WordPress\Abilities\Content\Content_Query' ) ) {
 	if ( class_exists( 'WP_Ability' ) ) {
-		require __DIR__ . '/Fixtures/pending-class-doubles.php';
 	}
 }
 // Task-specified shim: ONLY load when the class is still undefined.
 if ( ! class_exists( 'WordPress\Abilities\Content\Content_Query' ) ) {
-	require $package_root . '/.stubs/pending-package-classes.php';
 }

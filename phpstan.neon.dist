@@ -16,4 +16,3 @@ parameters:
 		# Runtime-defined placeholder classes for the abilities that land in WP3/WP4.
 		# Loaded by PHPStan itself (dev tooling, never composer-autoloaded); remove
 		# this entry together with the file when the real classes land.
-		- .stubs/pending-package-classes.php

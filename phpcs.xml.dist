@@ -4,6 +4,7 @@
 
 	<file>src/</file>
 	<file>tests/</file>
+	<exclude-pattern>*/tests/Fixtures/*</exclude-pattern>
 
 	<arg name="extensions" value="php"/>
 	<arg value="sp"/>

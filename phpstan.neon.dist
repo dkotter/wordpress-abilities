@@ -6,6 +6,9 @@ parameters:
 	paths:
 		- src
 		- tests
+	excludePaths:
+		analyse:
+			- tests/Fixtures
 	stubFiles:
 		# Abilities API symbols (new in core trunk, not yet in phpstan-wordpress).
 		- .stubs/abilities-api.php

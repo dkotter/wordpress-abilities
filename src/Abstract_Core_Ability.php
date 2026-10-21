@@ -28,7 +28,7 @@ abstract class Abstract_Core_Ability extends WP_Ability {
 	/**
 	 * The full ability name, including its tier prefix.
 	 *
-	 * @return string E.g. 'wp/post-create' or 'core/content-query'.
+	 * @return string E.g. 'core/content-query'.
 	 */
 	abstract protected function ability_name(): string;
 

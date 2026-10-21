@@ -3,10 +3,13 @@
  * Tests: Registrar behavior (HANDOFF §10.3, §14 WP2).
  *
  * Tests run in declaration order inside one WP boot; registration state is
- * therefore sequenced deliberately. Skip-behavior asserts use manifest names
- * (core/content-query, wp/post-create) per §14 while the real abilities are
- * pending (WP3/WP4); the concrete classes under those FQCNs are the fixture
- * doubles from tests/bootstrap.php.
+ * therefore sequenced deliberately. The only manifest name
+ * (`core/content-query`) may itself be core-provided on trunk (the package
+ * copy then self-skips before the gates below it run), so the gate paths
+ * that need a package-owned, non-public vehicle — the version floor and
+ * `public_only` selection — drive the synthetic `test/registrar-synthetic`
+ * entry through the engine's own registration funnel. Its `test/` prefix
+ * can never collide with real manifest growth (`core/` or `wp/` entries).
  *
  * @package WordPress\Abilities
  */
@@ -15,7 +18,9 @@ declare( strict_types = 1 );
 
 namespace WordPress\Abilities\Tests;
 
+use ReflectionMethod;
 use ReflectionProperty;
+use WordPress\Abilities\Abstract_Core_Ability;
 use WordPress\Abilities\Manifest;
 use WordPress\Abilities\Registrar;
 use WP_Abilities_Registry;
@@ -25,6 +30,9 @@ use Yoast\PHPUnitPolyfills\TestCases\TestCase;
  * Registrar contract tests.
  */
 final class RegistrarTest extends TestCase {
+
+	/** Synthetic ability name, outside every real manifest tier prefix. */
+	private const SYNTHETIC_NAME = 'test/registrar-synthetic';
 
 	/**
 	 * Recorded _doing_it_wrong() calls: function => accumulated messages.
@@ -40,6 +48,14 @@ final class RegistrarTest extends TestCase {
 	 * @var string|null
 	 */
 	private static ?string $version_floor_saved = null;
+
+	/**
+	 * Result of registering the synthetic ability inside the reopened init
+	 * window (null until the window has run).
+	 *
+	 * @var bool|null
+	 */
+	private static ?bool $synthetic_window_result = null;
 
 	/**
 	 * Starts recording _doing_it_wrong() traffic for the whole class.
@@ -136,6 +152,139 @@ final class RegistrarTest extends TestCase {
 	}
 
 	/**
+	 * Builds the synthetic manifest-shaped entry.
+	 *
+	 * Same shape as a Manifest::all() entry: experimental tier, no required
+	 * features, no lineage. It exercises the Registrar's gate chain and
+	 * provenance stamping without claiming a real manifest slot.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function synthetic_entry(): array {
+		static $entry = null;
+		if ( null === $entry ) {
+			/*
+			 * Anonymous on purpose: the sniff rules allow one object
+			 * structure per file, and the vehicle never needs a file of its
+			 * own. PHP registers anonymous classes in the class table under
+			 * a generated name, so the engine's `new $entry['class']()` probe
+			 * and registration paths run verbatim. Authors public=false, the
+			 * vehicle for the public_only selection gate.
+			 */
+			$ability = new class() extends Abstract_Core_Ability {
+
+				/**
+				 * The full ability name, including its tier prefix. Must
+				 * match SYNTHETIC_NAME; the constructor name-match notice
+				 * and the suite's no-wrong-usage assertions keep the pair
+				 * in sync.
+				 */
+				protected function ability_name(): string {
+					return 'test/registrar-synthetic';
+				}
+
+				/**
+				 * The human-readable ability label.
+				 */
+				protected function label(): string {
+					return 'Registrar test synthetic';
+				}
+
+				/**
+				 * A detailed description of what the ability does.
+				 */
+				protected function description(): string {
+					return 'Synthetic non-public ability exercising the Registrar gates in the test suite. Never ships in the manifest.';
+				}
+
+				/**
+				 * The ability category slug.
+				 */
+				protected function category_slug(): string {
+					return 'content';
+				}
+
+				/**
+				 * The JSON Schema definition for the ability's input.
+				 */
+				protected function input_schema(): array {
+					return array();
+				}
+
+				/**
+				 * The JSON Schema definition for the ability's output.
+				 */
+				protected function output_schema(): array {
+					return array();
+				}
+
+				/**
+				 * Builds the execute callback.
+				 */
+				protected function make_execute_callback(): callable {
+					return static function (): array {
+						return array();
+					};
+				}
+
+				/**
+				 * Builds the permission callback.
+				 */
+				protected function make_permission_callback(): callable {
+					return static function (): bool {
+						return true;
+					};
+				}
+
+				/**
+				 * The ability meta: authors public=false, the vehicle for
+				 * the public_only selection gate.
+				 */
+				protected function ability_meta(): array {
+					return array( 'public' => false );
+				}
+
+				/**
+				 * The request-level capability floor: the permission
+				 * callback fully owns authorization for the synthetic.
+				 */
+				protected function required_capabilities(): array {
+					return array();
+				}
+			};
+
+			$entry = array(
+				'name'           => self::SYNTHETIC_NAME,
+				'class'          => get_class( $ability ),
+				'category'       => 'content',
+				'tier'           => Manifest::TIER_EXPERIMENTAL,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array(),
+				'renamed_from'   => null,
+				'proposal'       => null,
+			);
+		}
+
+		return $entry;
+	}
+
+	/**
+	 * Drives the synthetic entry through the engine's own registration
+	 * funnel — the same private Registrar::try_register() every public entry
+	 * point calls — so the gate chain runs exactly as it would for a real
+	 * manifest entry.
+	 *
+	 * @param array<string, mixed> $args Consumer-side selection policy.
+	 * @return bool The try_register() result.
+	 */
+	private static function try_register_synthetic( array $args = array() ): bool {
+		$method = new ReflectionMethod( Registrar::class, 'try_register' );
+		$method->setAccessible( true ); // No-op on PHP 8.1+, required on 7.4.
+		return (bool) $method->invoke( null, self::SYNTHETIC_NAME, self::synthetic_entry(), $args );
+	}
+
+	/**
 	 * 1. API present; pre-init calls defer (hooked) and return "not yet".
 	 */
 	public function test_api_present_and_pre_init_calls_defer(): void {
@@ -147,36 +296,45 @@ final class RegistrarTest extends TestCase {
 		Registrar::register_all(); // Second pre-init call: static-hook dedupe.
 		self::assert_no_wrong_usage();
 
-		self::assertFalse( Registrar::register( 'wp/post-create' ), 'Pre-init registration defers: false.' );
 		self::assertFalse( Registrar::register( 'core/content-query' ), 'Pre-init registration defers: false.' );
-		self::assertFalse( Registrar::is_registered( 'wp/post-create' ), 'Nothing is registered before the action fires.' );
+		self::assertFalse( Registrar::is_registered( 'core/content-query' ), 'Nothing is registered before the action fires.' );
 
 		self::apply_version_floor(); // Active for the deferred callbacks' first run.
 	}
 
 	/**
 	 * 2. The lazily-fired init action runs the deferred hooks; the package
-	 * support-floor gate blocks our registration under an old WP version,
-	 * while a core-provided name still (skip) resolves.
+	 * support-floor gate blocks registration under an old WP version, while
+	 * a core-provided name still (skip) resolves.
 	 */
 	public function test_init_fires_and_min_wp_version_blocks(): void {
 		WP_Abilities_Registry::get_instance(); // Fires wp_abilities_api_init (lazy).
 		self::assertSame( 1, did_action( 'wp_abilities_api_init' ) );
 
-		self::assertFalse( wp_has_ability( 'wp/post-create' ), 'Support floor (5.0 < 6.9) skipped wp/post-create.' );
-		self::assertFalse( Registrar::is_registered( 'wp/post-create' ) );
+		/*
+		 * Floor gate via the synthetic entry: unambiguous on both envs. The
+		 * manifest name cannot carry this assertion on trunk, where core may
+		 * provide core/content-query during the action, so the package copy
+		 * resolves via the wp_has_ability() gate before the version floor is
+		 * ever consulted for it.
+		 */
+		self::assertFalse( self::try_register_synthetic(), 'Support floor (5.0 < 6.9) skipped the synthetic ability.' );
+		self::assertFalse( wp_has_ability( self::SYNTHETIC_NAME ), 'The floor-blocked ability never reached the registry.' );
+		self::assertFalse( Registrar::is_registered( self::SYNTHETIC_NAME ) );
 
 		self::clear_version_floor();
 
-		// Core-provided skip: on trunk/fixture envs with show_in_abilities
-		// post types, core registers core/content-query itself and the
-		// package copy self-skips (wp_has_ability true). On the stable env
-		// core cannot register it; our copy then registers (next tests).
+		// Core-provided skip: on trunk envs with show_in_abilities post
+		// types, core registers core/content-query itself and the package
+		// copy self-skips (wp_has_ability true). On the stable env core
+		// cannot register it and the deferred copy was floor-blocked above;
+		// our copy then registers (next tests).
 		$core_provides = wp_has_ability( 'core/content-query' );
 		if ( $core_provides ) {
 			self::assertTrue( Registrar::is_registered( 'core/content-query' ), 'Core-provided name resolves as registered.' );
 		} else {
 			self::assertFalse( wp_has_ability( 'core/content-query' ), 'Stable env: core skipped it entirely (show_in_abilities unsupported).' );
+			self::assertFalse( Registrar::is_registered( 'core/content-query' ), 'Stable env: the floor-blocked copy is not registered.' );
 		}
 	}
 
@@ -185,9 +343,9 @@ final class RegistrarTest extends TestCase {
 	 * 'filter' callable (which receives name + manifest entry).
 	 */
 	public function test_public_only_and_consumer_filter_gates(): void {
-		// Fixture double for wp/post-create authors public=false.
-		self::assertFalse( Registrar::register( 'wp/post-create', array( 'public_only' => true ) ), 'public_only skipped the non-public ability.' );
-		self::assertFalse( wp_has_ability( 'wp/post-create' ) );
+		// The synthetic ability authors public=false.
+		self::assertFalse( self::try_register_synthetic( array( 'public_only' => true ) ), 'public_only skipped the non-public ability.' );
+		self::assertFalse( wp_has_ability( self::SYNTHETIC_NAME ) );
 
 		$captured = array();
 		$filter   = static function ( string $name, array $entry ) use ( &$captured ): bool {
@@ -200,7 +358,15 @@ final class RegistrarTest extends TestCase {
 		self::assertSame( Manifest::get( 'core/content-query' ), $captured[0][1], 'The filter receives the manifest entry.' );
 		self::reset_wrong_usage();
 
+		// Reopen the init window; drive a full positive registration of the
+		// synthetic through the same funnel the deferred manifest hooks use.
 		self::open_fresh_init_window();
+		add_action(
+			'wp_abilities_api_init',
+			static function (): void {
+				self::$synthetic_window_result = self::try_register_synthetic();
+			}
+		);
 		Registrar::register_all(); // Defers: did_action() reads 0 again.
 		WP_Abilities_Registry::get_instance(); // Re-fires wp_abilities_api_init.
 		self::assertTrue( wp_has_ability( 'core/content-query' ), 'Default policy after the filtered call resolves the name one way or another.' );
@@ -211,15 +377,18 @@ final class RegistrarTest extends TestCase {
 	 * stamped with source, package_version, stability and renamed_from.
 	 */
 	public function test_positive_registration_and_provenance_meta(): void {
-		self::assertTrue( Registrar::register( 'wp/post-create' ), 'Experimental ability registers under a supported version.' );
-		self::assertTrue( wp_has_ability( 'wp/post-create' ) );
+		self::assertNotNull( self::$synthetic_window_result, 'The reopened init window ran the synthetic registration.' );
+		self::assertTrue( self::$synthetic_window_result, 'The synthetic ability registered inside the init window.' );
+		self::assertTrue( wp_has_ability( self::SYNTHETIC_NAME ) );
+		self::assertTrue( Registrar::is_registered( self::SYNTHETIC_NAME ) );
 
-		$ability = WP_Abilities_Registry::get_instance()->get_registered( 'wp/post-create' );
+		$ability = WP_Abilities_Registry::get_instance()->get_registered( self::SYNTHETIC_NAME );
 		self::assertNotNull( $ability );
 		$meta = $ability->get_meta();
 		self::assertSame( 'wordpress/abilities', $meta['source'] ?? null, 'Provenance: source.' );
 		self::assertSame( Manifest::VERSION, $meta['package_version'] ?? null, 'Provenance: package_version.' );
 		self::assertSame( Manifest::TIER_EXPERIMENTAL, $meta['stability'] ?? null, 'Provenance: stability tier.' );
+		self::assertArrayNotHasKey( 'renamed_from', $meta, 'Provenance: no renamed_from key when entry value is null (synthetic).' );
 
 		foreach ( Manifest::all() as $name => $entry ) {
 			$instance = WP_Abilities_Registry::get_instance()->get_registered( $name );
@@ -245,7 +414,8 @@ final class RegistrarTest extends TestCase {
 	public function test_idempotent_double_registration(): void {
 		self::reset_wrong_usage();
 
-		self::assertTrue( Registrar::register( 'wp/post-create' ), 'In-process idempotence: gate 1.' );
+		self::assertTrue( self::try_register_synthetic(), 'In-process idempotence: gate 1.' );
+		self::assertTrue( Registrar::register( 'core/content-query' ), 'Manifest-name idempotence: gate 1 or core-provided.' );
 		Registrar::register_all();
 
 		// Simulate another consumer calling again in-process.
@@ -257,7 +427,7 @@ final class RegistrarTest extends TestCase {
 
 		$names = array_keys( WP_Abilities_Registry::get_instance()->get_all_registered() );
 		self::assertSame( $names, array_values( array_unique( $names ) ), 'No duplicate registry entries after repeat registration.' );
-		self::assertContains( 'wp/post-create', $names );
+		self::assertContains( self::SYNTHETIC_NAME, $names );
 		self::assertContains( 'core/content-query', $names );
 	}
 
@@ -279,8 +449,8 @@ final class RegistrarTest extends TestCase {
 				Registrar::register_all();
 			}
 		);
-		self::assertFalse( Registrar::register( 'wp/post-create' ) );
-		self::assertFalse( Registrar::is_registered( 'wp/post-create' ) );
+		self::assertFalse( Registrar::register( 'core/content-query' ) );
+		self::assertFalse( Registrar::is_registered( 'core/content-query' ) );
 
 		self::assertCount( 2, self::$wrong_usage, 'Both entry points logged the missing API.' );
 		self::assertArrayHasKey( 'WordPress\Abilities\Registrar::register_all', self::$wrong_usage );

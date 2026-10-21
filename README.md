@@ -48,7 +48,7 @@ package has no opinion.)*
    autoloader; your choice. The package takes no position on which
    mechanism you use.
 2. **Register on your own gating and timing** — call
-   `Registrar::register_all()` or `Registrar::register( 'wp/post-create' )`
+   `Registrar::register_all()` or `Registrar::register( 'core/content-query' )`
    on `wp_abilities_api_init` or later. The Registrar is idempotent and
    timing-aware, so late registration is safe. What exists is the manifest;
    **when it's on is your policy**.
@@ -80,7 +80,6 @@ Full rules, the promotion path, and the rename protocol are in
 | Name | Tier | Category | Notes |
 |---|---|---|---|
 | `core/content-query` | core | content | Backport of the readonly content query ability landed in WordPress core 7.2 (`core_since: 7.2`). On 7.2+ core provides it and the Registrar skips it; on 6.9–7.1 the package serves it under the same name. Requires the `show_in_abilities` support feature (polyfilled where core lacks it). |
-| `wp/post-create` | experimental | content | First write ability: creates posts (`readonly=false`, `idempotent=false`, `destructive=false`; `edit_posts` capability floor with fail-closed permission handling). Experimental — names and schema are unstable. |
 
 ## Roadmap (not yet)
 

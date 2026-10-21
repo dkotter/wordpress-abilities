@@ -60,17 +60,6 @@ final class Manifest {
 				// the landed core work (wordpress-develop PR 12195) before release.
 				'proposal'       => 'https://github.com/WordPress/wordpress-develop/pull/12195',
 			),
-			'wp/post-create'     => array(
-				'name'           => 'wp/post-create',
-				'class'          => Content\Post_Create::class,
-				'category'       => 'content',
-				'tier'           => self::TIER_EXPERIMENTAL,
-				'min_wp_version' => '6.9',
-				'core_since'     => null,
-				'requires'       => array(),
-				'renamed_from'   => null,
-				'proposal'       => null,
-			),
 		);
 	}
 

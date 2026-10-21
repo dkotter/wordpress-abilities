@@ -32,13 +32,35 @@ final class ManifestTest extends TestCase {
 	 * Experimental tier ⇒ wp/ prefix, and neither core/ nor wordpress/.
 	 */
 	public function test_experimental_names_use_wp_prefix(): void {
+		$experimental = array();
 		foreach ( Manifest::all() as $name => $entry ) {
 			if ( Manifest::TIER_EXPERIMENTAL !== $entry['tier'] ) {
 				continue;
 			}
+			$experimental[] = $name;
 			self::assertTrue( str_starts_with( $name, 'wp/' ), sprintf( 'Experimental %s must start with wp/.', $name ) );
 			self::assertFalse( str_starts_with( $name, 'core/' ) || str_starts_with( $name, 'wordpress/' ), sprintf( 'Experimental %s must not start with core/ or wordpress/.', $name ) );
 		}
+
+		/*
+		 * The initial manifest ships no experimental entries, so the loop
+		 * above can legitimately run nothing. Restate the rule as an
+		 * aggregate assertion that holds in both cases, so the test never
+		 * executes assertion-free while the manifest temporarily has no
+		 * experimental-tier abilities.
+		 */
+		self::assertSame(
+			array(),
+			array_values(
+				array_filter(
+					$experimental,
+					static function ( string $name ): bool {
+						return ! str_starts_with( $name, 'wp/' );
+					}
+				)
+			),
+			'Every experimental name must carry the wp/ prefix.'
+		);
 	}
 
 	/**

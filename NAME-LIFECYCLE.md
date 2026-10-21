@@ -16,12 +16,13 @@ integrations — for good.
 ### Promotion path
 
 Iteration happens under `wp/`; landing in core is a mechanical pipeline, not a
-rewrite. Worked example, `wp/post-create`:
+rewrite. Worked example, `wp/post-update` (a planned write ability, not yet
+shipped):
 
-1. **Incubate:** `wp/post-create` iterates and gets tested through the MCP
+1. **Incubate:** `wp/post-update` iterates and gets tested through the MCP
    adapter against real tasks. Names and schema may still change freely.
 2. **Ready:** file the core proposal (a trac ticket or GitHub issue).
-3. **Same release:** rename to `core/post-create` — tier becomes `stable`,
+3. **Same release:** rename to `core/post-update` — tier becomes `stable`,
    the manifest entry gains its `proposal` URL, and the schema is frozen
    (backwards compatible from this moment).
 4. **Core ships it:** tier flips to `core` and `core_since` is set. From then

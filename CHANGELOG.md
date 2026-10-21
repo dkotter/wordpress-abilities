@@ -35,12 +35,15 @@ The entries below describe the current prototype state._
     by the package under the same name on older WordPress, skipped by the
     Registrar wherever core provides it; satisfies the `show_in_abilities`
     support feature via a polyfill where core lacks it.
-  - `wp/post-create` — tier `experimental`: the first write ability
-    (creates posts; `readonly=false`, `idempotent=false`,
-    `destructive=false`; `edit_posts` capability floor; fail-closed
-    permission handling).
 - Test infrastructure: PHPUnit suites (`ManifestTest`, `RegistrarTest`,
   per-ability tests with permission negative/positive coverage on every gate
   path), and a dual wp-env matrix — WordPress trunk (core-provided Abilities
   API) and latest stable (consumer-provided API loaded via a mu-plugin test
   fixture, mirroring how consumers supply the API on WordPress < 7.2).
+### Removed
+
+- `wp/post-create` — the self-authored experimental write-ability prototype
+  was dropped before any publish: the initial manifest carries only faithful
+  ports of existing abilities. Went away together with review finding S2
+  (an unchecked null `post_status` reaching `wp_insert_post`), which is
+  removed with the file rather than fixed.

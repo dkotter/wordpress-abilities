@@ -215,7 +215,16 @@ final class ContentQueryTest extends TestCase {
 	public function test_required_capabilities_mirror_trunk(): void {
 		$ability = $this->get_registered();
 		self::assertNotNull( $ability );
-		self::assertSame( array(), $ability->get_required_capabilities() );
+		if ( method_exists( $ability, 'get_required_capabilities' ) ) {
+			// 7.2+ hosts (trunk core, fixture snapshot): the floor is stored and read back.
+			self::assertSame( array(), $ability->get_required_capabilities() );
+		} else {
+			// Host API predates 7.2: assert the package copy's authored floor reflectively.
+			self::assertSame(
+				array(),
+				( new ReflectionClass( $ability ) )->getMethod( 'required_capabilities' )->invoke( $ability )
+			);
+		}
 	}
 
 	/**

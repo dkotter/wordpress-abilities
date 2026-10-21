@@ -26,6 +26,7 @@ declare( strict_types = 1 );
 
 namespace WordPress\Abilities\Tests;
 
+use ReflectionClass;
 use WordPress\Abilities\Content\Post_Create;
 use WordPress\Abilities\Manifest;
 use WordPress\Abilities\Registrar;
@@ -167,7 +168,24 @@ final class PostCreateTest extends TestCase {
 
 		self::assertSame( 'wp/post-create', $this->ability->get_name() );
 		self::assertSame( 'content', $this->ability->get_category(), 'Manifest category slug.' );
-		self::assertSame( array( 'edit_posts' ), $this->ability->get_required_capabilities(), 'The request-level capability floor.' );
+		/*
+		 * Runtime host branching: phpstan's analysis-time WP_Ability stub is
+		 * the 7.2+ surface and therefore treats the getter as certain to
+		 * exist, yet pre-7.2 hosts (core 7.1) genuinely lack it — the branch
+		 * below is real, not dead code.
+		 */
+		// @phpstan-ignore-next-line function.alreadyNarrowedType (Pre-7.2 host API has no getter.)
+		if ( method_exists( $this->ability, 'get_required_capabilities' ) ) {
+			self::assertSame( array( 'edit_posts' ), $this->ability->get_required_capabilities(), 'The request-level capability floor.' );
+		} else {
+			// Host API predates the 7.2 `required_capabilities` surface: the getter
+			// does not exist there; assert the class's authored contract instead.
+			self::assertSame(
+				array( 'edit_posts' ),
+				( new ReflectionClass( $this->ability ) )->getMethod( 'required_capabilities' )->invoke( $this->ability ),
+				'The request-level capability floor.'
+			);
+		}
 
 		$meta = $this->ability->get_meta();
 		self::assertFalse( $meta['annotations']['readonly'], 'Create modifies its environment.' );

@@ -78,8 +78,32 @@ if ( 'off' !== $_fixture_api_mode ) {
 	tests_add_filter(
 		'wp_abilities_api_categories_init',
 		static function (): void {
-			if ( function_exists( 'wp_register_core_ability_categories' ) ) {
+			/*
+			 * Host core categories. When the fixture mu-plugin is mapped and
+			 * active it provisions core categories itself (trunk semantics); a
+			 * flag is set there so this callback does not re-register behind it.
+			 */
+			if ( empty( $GLOBALS['wp_abilities_fixture_active'] ) && function_exists( 'wp_register_core_ability_categories' ) ) {
 				wp_register_core_ability_categories();
+			}
+
+			/*
+			 * Category backfill for host API revisions that predate trunk's
+			 * default category set: 6.9-7.1 ship only `site` and `user`, so the
+			 * `content` category (added in core 7.2, per the fixture snapshot
+			 * this shim mirrors) is missing and package registration would
+			 * fail closed with "category not registered". Definition matches
+			 * the fixture/trunk registrar verbatim; the guard makes newer
+			 * hosts (and the active fixture) no-ops.
+			 */
+			if ( function_exists( 'wp_register_ability_category' ) && function_exists( 'wp_has_ability_category' ) && ! wp_has_ability_category( 'content' ) ) {
+				wp_register_ability_category(
+					'content',
+					array(
+						'label'       => __( 'Content' ),
+						'description' => __( 'Abilities that retrieve or manage posts and other content.' ),
+					)
+				);
 			}
 		},
 		2

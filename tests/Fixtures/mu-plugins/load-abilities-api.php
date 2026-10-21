@@ -20,6 +20,9 @@ if ( function_exists( 'wp_register_ability' ) ) {
 	return; // API already present (trunk core, or a consumer plugin): no-op.
 }
 
+// Tell tests/bootstrap.php this shim owns host provisioning while active.
+$GLOBALS['wp_abilities_fixture_active'] = true;
+
 $abilities_fixture_dir = dirname( __DIR__ ) . '/abilities-api/';
 
 require_once $abilities_fixture_dir . 'class-wp-ability-category.php';

@@ -97,7 +97,7 @@ const PKG_IMPORTS = array( 'DateTimeZone', 'stdClass', 'WP_Error', 'WP_Post', 'W
  *
  * @return list<array{int,string,int}>
  */
-function tkz( string $src ): array {
+function tokenize_source( string $src ): array {
 	$raw = token_get_all( $src, TOKEN_PARSE );
 	$out = array();
 	$line = 1;
@@ -141,11 +141,11 @@ function struct_delta( array $t ): int {
 }
 
 /** Index of the token that closes the group opened at $open. */
-function match_group( array $T, int $open ): int {
+function match_group( array $tokens, int $open ): int {
 	$depth = 0;
-	$n = count( $T );
+	$n = count( $tokens );
 	for ( $i = $open; $i < $n; $i++ ) {
-		$depth += struct_delta( $T[ $i ] );
+		$depth += struct_delta( $tokens[ $i ] );
 		if ( 0 === $depth ) {
 			return $i;
 		}
@@ -154,11 +154,11 @@ function match_group( array $T, int $open ): int {
 }
 
 /** First meaningful token at index >= $i and <= $lim (inclusive), or null. */
-function fm( array $T, int $i, ?int $lim = null ): ?int {
-	$n = count( $T );
+function next_meaningful_token( array $tokens, int $i, ?int $lim = null ): ?int {
+	$n = count( $tokens );
 	$lim = null === $lim ? $n - 1 : min( $lim, $n - 1 );
 	for ( $j = $i; $j <= $lim; $j++ ) {
-		if ( ! is_skipped( $T[ $j ] ) ) {
+		if ( ! is_skipped( $tokens[ $j ] ) ) {
 			return $j;
 		}
 	}
@@ -166,10 +166,10 @@ function fm( array $T, int $i, ?int $lim = null ): ?int {
 }
 
 /** First meaningful token at index <= $i and >= $from (inclusive), or null. */
-function pm( array $T, int $from, int $i ): ?int {
+function prev_meaningful_token( array $tokens, int $from, int $i ): ?int {
 	$from = max( 0, $from );
 	for ( $j = $i; $j >= $from; $j-- ) {
-		if ( ! is_skipped( $T[ $j ] ) ) {
+		if ( ! is_skipped( $tokens[ $j ] ) ) {
 			return $j;
 		}
 	}
@@ -177,29 +177,29 @@ function pm( array $T, int $from, int $i ): ?int {
 }
 
 /** Verbatim text of token span [$a..$b] inclusive. */
-function span_text( array $T, int $a, int $b ): string {
+function span_text( array $tokens, int $a, int $b ): string {
 	$s = '';
 	for ( $i = $a; $i <= $b; $i++ ) {
-		$s .= $T[ $i ][1];
+		$s .= $tokens[ $i ][1];
 	}
 	return $s;
 }
 
 /** Shrink a span inward to its meaningful bounds. */
-function trim_span( array $T, int $a, int $b ): array {
-	while ( $a < $b && is_skipped( $T[ $a ] ) ) {
+function trim_span( array $tokens, int $a, int $b ): array {
+	while ( $a < $b && is_skipped( $tokens[ $a ] ) ) {
 		$a++;
 	}
-	while ( $b > $a && is_skipped( $T[ $b ] ) ) {
+	while ( $b > $a && is_skipped( $tokens[ $b ] ) ) {
 		$b--;
 	}
 	return array( $a, $b );
 }
 
 /** Text of span trimmed to meaningful tokens. */
-function span_trim( array $T, int $a, int $b ): string {
-	list( $a, $b ) = trim_span( $T, $a, $b );
-	return span_text( $T, $a, $b );
+function span_trim( array $tokens, int $a, int $b ): string {
+	list( $a, $b ) = trim_span( $tokens, $a, $b );
+	return span_text( $tokens, $a, $b );
 }
 
 /**
@@ -254,12 +254,12 @@ function unquote( string $s ): string {
  *
  * @return list<array{int,int}> [startToken, endToken] inclusive.
  */
-function split_statements( array $T, int $from, int $to ): array {
+function split_statements( array $tokens, int $from, int $to ): array {
 	$stmts = array();
 	$depth = 0;
 	$start = $from;
 	for ( $i = $from; $i <= $to; $i++ ) {
-		$t = $T[ $i ];
+		$t = $tokens[ $i ];
 		if ( is_skipped( $t ) ) {
 			continue;
 		}
@@ -267,8 +267,8 @@ function split_statements( array $T, int $from, int $to ): array {
 		if ( 125 === $t[0] && 1 === $depth ) {
 			// Closing brace of a brace-terminated statement (if/foreach/while/switch/try).
 			// Only if the next meaningful token is not ';' (closures/do-while keep going).
-			$next = fm( $T, $i + 1 );
-			if ( null === $next || 59 !== $T[ $next ][0] ) {
+			$next = next_meaningful_token( $tokens, $i + 1 );
+			if ( null === $next || 59 !== $tokens[ $next ][0] ) {
 				$depth += $d;
 				$stmts[] = array( $start, $i );
 				$start = $i + 1;
@@ -289,7 +289,7 @@ function split_statements( array $T, int $from, int $to ): array {
 	}
 	$out = array();
 	foreach ( $stmts as $st ) {
-		if ( null !== fm( $T, $st[0], $st[1] ) ) {
+		if ( null !== next_meaningful_token( $tokens, $st[0], $st[1] ) ) {
 			$out[] = $st;
 		}
 	}
@@ -297,13 +297,13 @@ function split_statements( array $T, int $from, int $to ): array {
 }
 
 /** Statements strictly between an open { and close } token. */
-function body_statements( array $T, int $open, int $close ): array {
-	return split_statements( $T, $open + 1, $close - 1 );
+function body_statements( array $tokens, int $open, int $close ): array {
+	return split_statements( $tokens, $open + 1, $close - 1 );
 }
 
 /** Index of a statement's first meaningful token. */
-function stmt_start( array $T, array $st ): int {
-	$f = fm( $T, $st[0], $st[1] );
+function stmt_start( array $tokens, array $st ): int {
+	$f = next_meaningful_token( $tokens, $st[0], $st[1] );
 	if ( null === $f ) {
 		fail( 'empty statement span' );
 	}
@@ -311,8 +311,8 @@ function stmt_start( array $T, array $st ): int {
 }
 
 /** Text of a statement span, trimmed to meaningful tokens. */
-function stmt_text( array $T, array $st ): string {
-	return span_trim( $T, $st[0], $st[1] );
+function stmt_text( array $tokens, array $st ): string {
+	return span_trim( $tokens, $st[0], $st[1] );
 }
 
 /* ---------------------------------------------------------------------
@@ -324,12 +324,12 @@ function stmt_text( array $T, array $st ): string {
  * scan backwards over whitespace/comments, return index of the first
  * (leftmost) comment in the contiguous run, or $start if none.
  */
-function doc_start( array $T, int $start ): int {
+function doc_start( array $tokens, int $start ): int {
 	$i = $start;
 	$first = $start;
 	while ( $i > 0 ) {
 		$i--;
-		$id = $T[ $i ][0];
+		$id = $tokens[ $i ][0];
 		if ( T_WHITESPACE === $id ) {
 			continue;
 		}
@@ -343,28 +343,28 @@ function doc_start( array $T, int $start ): int {
 }
 
 /** Parse the single class decl: modifiers back to the leftmost, name, extends, body. */
-function parse_class( array $T ): array {
-	$n = count( $T );
+function parse_class( array $tokens ): array {
+	$n = count( $tokens );
 	for ( $i = 0; $i < $n; $i++ ) {
-		if ( T_CLASS !== $T[ $i ][0] ) {
+		if ( T_CLASS !== $tokens[ $i ][0] ) {
 			continue;
 		}
-		$prev = pm( $T, 0, $i - 1 );
-		if ( null !== $prev && T_DOUBLE_COLON === $T[ $prev ][0] ) {
+		$prev = prev_meaningful_token( $tokens, 0, $i - 1 );
+		if ( null !== $prev && T_DOUBLE_COLON === $tokens[ $prev ][0] ) {
 			continue; // ::class resolution
 		}
-		$ni = fm( $T, $i + 1 );
+		$ni = next_meaningful_token( $tokens, $i + 1 );
 		if ( null === $ni ) {
 			continue;
 		}
 		$start = $i;
 		$p = $i;
 		while ( true ) {
-			$pv = pm( $T, 0, $p - 1 );
+			$pv = prev_meaningful_token( $tokens, 0, $p - 1 );
 			if ( null === $pv ) {
 				break;
 			}
-			$pid = $T[ $pv ][0];
+			$pid = $tokens[ $pv ][0];
 			if ( T_FINAL === $pid || T_ABSTRACT === $pid || T_READONLY === $pid ) {
 				$p = $pv;
 			} else {
@@ -372,19 +372,19 @@ function parse_class( array $T ): array {
 			}
 		}
 		$start = $p;
-		$name = $T[ $ni ][1];
+		$name = $tokens[ $ni ][1];
 		$extends = '';
 		$open = null;
 		$j = $ni + 1;
 		while ( true ) {
-			$f = fm( $T, $j );
+			$f = next_meaningful_token( $tokens, $j );
 			if ( null === $f ) {
 				fail( 'unterminated class header' );
 			}
-			$id = $T[ $f ][0];
+			$id = $tokens[ $f ][0];
 			if ( T_EXTENDS === $id ) {
-				$parent = fm( $T, $f + 1 );
-				$extends = $T[ $parent ][1];
+				$parent = next_meaningful_token( $tokens, $f + 1 );
+				$extends = $tokens[ $parent ][1];
 				$j = $parent + 1;
 				continue;
 			}
@@ -397,10 +397,10 @@ function parse_class( array $T ): array {
 			}
 			$j = $f + 1;
 		}
-		$close = match_group( $T, $open );
+		$close = match_group( $tokens, $open );
 		return array(
 			'start'   => $start,
-			'doc'     => doc_start( $T, $start ),
+			'doc'     => doc_start( $tokens, $start ),
 			'name'    => $name,
 			'extends' => $extends,
 			'open'    => $open,
@@ -419,12 +419,12 @@ function parse_class( array $T ): array {
  *
  * @return list<array<string,mixed>>
  */
-function parse_members( array $T, int $open, int $close ): array {
+function parse_members( array $tokens, int $open, int $close ): array {
 	$members = array();
 	$depth = 0;
 	$i = $open + 1;
 	while ( $i < $close ) {
-		$t = $T[ $i ];
+		$t = $tokens[ $i ];
 		if ( is_skipped( $t ) ) {
 			$i++;
 			continue;
@@ -444,18 +444,18 @@ function parse_members( array $T, int $open, int $close ): array {
 			$i++;
 			continue;
 		}
-		$prev = pm( $T, $open + 1, $i - 1 );
-		if ( null !== $prev && T_DOUBLE_COLON === $T[ $prev ][0] ) {
+		$prev = prev_meaningful_token( $tokens, $open + 1, $i - 1 );
+		if ( null !== $prev && T_DOUBLE_COLON === $tokens[ $prev ][0] ) {
 			$i++; // Foo::class usage
 			continue;
 		}
 		$p = $i;
 		while ( true ) {
-			$pv = pm( $T, $open + 1, $p - 1 );
+			$pv = prev_meaningful_token( $tokens, $open + 1, $p - 1 );
 			if ( null === $pv ) {
 				break;
 			}
-			$pid = $T[ $pv ][0];
+			$pid = $tokens[ $pv ][0];
 			if ( T_PUBLIC === $pid || T_PROTECTED === $pid || T_PRIVATE === $pid
 				|| T_STATIC === $pid || T_FINAL === $pid || T_ABSTRACT === $pid
 				|| T_READONLY === $pid ) {
@@ -465,17 +465,17 @@ function parse_members( array $T, int $open, int $close ): array {
 			}
 		}
 		if ( T_CONST === $id ) {
-			$ni = fm( $T, $i + 1, $close );
+			$ni = next_meaningful_token( $tokens, $i + 1, $close );
 			if ( null === $ni ) {
 				fail( 'const without name' );
 			}
-			$name = $T[ $ni ][1];
+			$name = $tokens[ $ni ][1];
 			$end = null;
 			$scan = $ni + 1;
 			$d = 0;
 			while ( $scan <= $close ) {
-				$d += struct_delta( $T[ $scan ] );
-				if ( 0 === $d && 59 === $T[ $scan ][0] ) {
+				$d += struct_delta( $tokens[ $scan ] );
+				if ( 0 === $d && 59 === $tokens[ $scan ][0] ) {
 					$end = $scan;
 					break;
 				}
@@ -486,7 +486,7 @@ function parse_members( array $T, int $open, int $close ): array {
 			}
 			$members[] = array(
 				'kind' => 'const', 'name' => $name, 'start' => $p, 'end' => $end,
-				'doc' => doc_start( $T, $p ),
+				'doc' => doc_start( $tokens, $p ),
 				'open' => null, 'close' => null, 'vis' => null,
 				'static' => false, 'final' => false, 'abstract' => false,
 			);
@@ -494,31 +494,31 @@ function parse_members( array $T, int $open, int $close ): array {
 			continue;
 		}
 		// function
-		$ni = fm( $T, $i + 1, $close );
+		$ni = next_meaningful_token( $tokens, $i + 1, $close );
 		if ( null === $ni ) {
 			fail( 'function without name' );
 		}
-		if ( 38 === $T[ $ni ][0] ) { // '&'
-			$ni = fm( $T, $ni + 1, $close );
+		if ( 38 === $tokens[ $ni ][0] ) { // '&'
+			$ni = next_meaningful_token( $tokens, $ni + 1, $close );
 			if ( null === $ni ) {
 				fail( 'malformed function reference' );
 			}
 		}
-		if ( T_STRING !== $T[ $ni ][0] ) {
-			fail( 'unexpected member form near token ' . $i . ' (' . $T[ $ni ][1] . ')' );
+		if ( T_STRING !== $tokens[ $ni ][0] ) {
+			fail( 'unexpected member form near token ' . $i . ' (' . $tokens[ $ni ][1] . ')' );
 		}
-		$name = $T[ $ni ][1];
-		$paren = fm( $T, $ni + 1, $close );
-		if ( null === $paren || 40 !== $T[ $paren ][0] ) {
+		$name = $tokens[ $ni ][1];
+		$paren = next_meaningful_token( $tokens, $ni + 1, $close );
+		if ( null === $paren || 40 !== $tokens[ $paren ][0] ) {
 			fail( 'function without parens: ' . $name );
 		}
-		$pclose = match_group( $T, $paren );
-		$after = fm( $T, $pclose + 1, $close );
-		if ( null !== $after && 58 === $T[ $after ][0] ) { // ':' return-type seam
+		$pclose = match_group( $tokens, $paren );
+		$after = next_meaningful_token( $tokens, $pclose + 1, $close );
+		if ( null !== $after && 58 === $tokens[ $after ][0] ) { // ':' return-type seam
 			$scan = $after;
 			$rtd = 0;
 			while ( $scan <= $close ) {
-				$t2 = $T[ $scan ];
+				$t2 = $tokens[ $scan ];
 				if ( ! is_skipped( $t2 ) && 0 === $rtd ) {
 					$id2 = $t2[0];
 					if ( 123 === $id2 || 59 === $id2 ) {
@@ -536,21 +536,21 @@ function parse_members( array $T, int $open, int $close ): array {
 		$end = null;
 		$bo = null;
 		$bc = null;
-		if ( null !== $after && 123 === $T[ $after ][0] ) {
+		if ( null !== $after && 123 === $tokens[ $after ][0] ) {
 			$bo = $after;
-			$bc = match_group( $T, $bo );
+			$bc = match_group( $tokens, $bo );
 			$end = $bc;
 		} else {
 			$end = $pclose;
 			$e = $pclose;
 			while ( $e < $close ) {
 				$e++;
-				if ( 59 === $T[ $e ][0] ) {
+				if ( 59 === $tokens[ $e ][0] ) {
 					$end = $e;
 					break;
 				}
 			}
-			if ( 59 !== $T[ $end ][0] ) {
+			if ( 59 !== $tokens[ $end ][0] ) {
 				fail( 'function without terminating semicolon: ' . $name );
 			}
 		}
@@ -559,7 +559,7 @@ function parse_members( array $T, int $open, int $close ): array {
 		$final = false;
 		$abstract = false;
 		for ( $q = $p; $q < $ni; $q++ ) {
-			$qid = $T[ $q ][0];
+			$qid = $tokens[ $q ][0];
 			if ( T_PUBLIC === $qid ) $vis = 'public';
 			elseif ( T_PROTECTED === $qid ) $vis = 'protected';
 			elseif ( T_PRIVATE === $qid ) $vis = 'private';
@@ -569,7 +569,7 @@ function parse_members( array $T, int $open, int $close ): array {
 		}
 		$members[] = array(
 			'kind' => 'function', 'name' => $name, 'start' => $p, 'end' => $end,
-			'doc' => doc_start( $T, $p ),
+			'doc' => doc_start( $tokens, $p ),
 			'open' => $bo, 'close' => $bc, 'vis' => $vis,
 			'static' => $static, 'final' => $final, 'abstract' => $abstract,
 		);
@@ -582,13 +582,13 @@ function parse_members( array $T, int $open, int $close ): array {
 }
 
 /** Verbatim text from docblock to end token. */
-function member_text( array $T, array $rec ): string {
-	return span_text( $T, $rec['doc'], $rec['end'] );
+function member_text( array $tokens, array $rec ): string {
+	return span_text( $tokens, $rec['doc'], $rec['end'] );
 }
 
-function index_by_name( array $M ): array {
+function index_by_name( array $members ): array {
 	$by = array();
-	foreach ( $M as $rec ) {
+	foreach ( $members as $rec ) {
 		if ( isset( $by[ $rec['name'] ] ) ) {
 			fail( 'duplicate member name: ' . $rec['name'] );
 		}
@@ -597,8 +597,8 @@ function index_by_name( array $M ): array {
 	return $by;
 }
 
-function find_member( array $M, string $name ): ?array {
-	foreach ( $M as $rec ) {
+function find_member( array $members, string $name ): ?array {
+	foreach ( $members as $rec ) {
 		if ( $rec['name'] === $name ) {
 			return $rec;
 		}
@@ -607,16 +607,16 @@ function find_member( array $M, string $name ): ?array {
 }
 
 /** The single `return <expr> ;` expression of a method body. */
-function return_expr( array $T, array $rec ): string {
+function return_expr( array $tokens, array $rec ): string {
 	$rec['kind'] === 'function' || fail( 'not a function: ' . $rec['name'] );
 	$rec['open'] !== null || fail( 'abstract method has no body: ' . $rec['name'] );
-	$stmts = body_statements( $T, $rec['open'], $rec['close'] );
+	$stmts = body_statements( $tokens, $rec['open'], $rec['close'] );
 	$expr = null;
 	foreach ( $stmts as $st ) {
-		$f = stmt_start( $T, $st );
-		if ( T_RETURN === $T[ $f ][0] ) {
+		$f = stmt_start( $tokens, $st );
+		if ( T_RETURN === $tokens[ $f ][0] ) {
 			$expr === null || fail( 'multiple return statements in ' . $rec['name'] );
-			$expr = span_trim( $T, $f + 1, $st[1] - 1 );
+			$expr = span_trim( $tokens, $f + 1, $st[1] - 1 );
 		}
 	}
 	if ( null === $expr ) {
@@ -647,9 +647,9 @@ function expr_is_empty_array( string $expr ): bool {
  * ------------------------------------------------------------------- */
 
 /** Tokens minus cosmetic classes (whitespace/comments), for semantic diff. */
-function sem_tokens( array $T ): array {
+function sem_tokens( array $tokens ): array {
 	$out = array();
-	foreach ( $T as $t ) {
+	foreach ( $tokens as $t ) {
 		if ( is_skipped( $t ) ) {
 			continue;
 		}
@@ -660,8 +660,8 @@ function sem_tokens( array $T ): array {
 
 /** Semantic diff of two sources: null on equality, else first mismatch info. */
 function semdiff( string $aText, string $bText ): ?array {
-	$A = sem_tokens( tkz( $aText ) );
-	$B = sem_tokens( tkz( $bText ) );
+	$A = sem_tokens( tokenize_source( $aText ) );
+	$B = sem_tokens( tokenize_source( $bText ) );
 	$lenA = count( $A );
 	$lenB = count( $B );
 	$n = min( $lenA, $lenB );
@@ -731,12 +731,12 @@ function slug_parts( string $abname ): array {
  * @return array<string,string>
  */
 function helper_texts( string $absText ): array {
-	$T = tkz( $absText );
-	$cls = parse_class( $T );
-	$M = parse_members( $T, $cls['open'], $cls['close'] );
+	$tokens = tokenize_source( $absText );
+	$cls = parse_class( $tokens );
+	$members = parse_members( $tokens, $cls['open'], $cls['close'] );
 	$out = array();
 	foreach ( INLINE_HELPERS as $h ) {
-		$rec = find_member( $M, $h );
+		$rec = find_member( $members, $h );
 		if ( null === $rec ) {
 			fail( 'helper not found in Abstract_Core_Ability: ' . $h );
 		}
@@ -746,7 +746,7 @@ function helper_texts( string $absText ): array {
 		$skipWs = false;
 		$text = '';
 		for ( $i = $rec['doc']; $i <= $rec['end']; $i++ ) {
-			$t = $T[ $i ];
+			$t = $tokens[ $i ];
 			if ( $skipWs ) {
 				$skipWs = false;
 				if ( T_WHITESPACE === $t[0] ) {
@@ -775,19 +775,19 @@ function helper_texts( string $absText ): array {
  * @return array<string,list<list<scalar>>>
  */
 function helper_bodies( string $absText ): array {
-	$T = tkz( $absText );
-	$cls = parse_class( $T );
-	$M = parse_members( $T, $cls['open'], $cls['close'] );
+	$tokens = tokenize_source( $absText );
+	$cls = parse_class( $tokens );
+	$members = parse_members( $tokens, $cls['open'], $cls['close'] );
 	$out = array();
 	foreach ( INLINE_HELPERS as $h ) {
-		$rec = find_member( $M, $h );
+		$rec = find_member( $members, $h );
 		if ( null === $rec ) {
 			fail( 'helper not found in Abstract_Core_Ability: ' . $h );
 		}
 		// Build full semantic token list of body span (including structure tokens).
 		$list = array();
 		for ( $i = $rec['open'] + 1; $i <= $rec['close'] - 1; $i++ ) {
-			$t = $T[ $i ];
+			$t = $tokens[ $i ];
 			if ( is_skipped( $t ) ) {
 				continue;
 			}
@@ -798,10 +798,10 @@ function helper_bodies( string $absText ): array {
 	return $out;
 }
 
-function registration_stmt( array $T, array $stmts ): array {
+function registration_stmt( array $tokens, array $stmts ): array {
 	foreach ( $stmts as $k => $st ) {
-		$f = stmt_start( $T, $st );
-		if ( T_STRING === $T[$f][0] && 'wp_register_ability' === $T[$f][1] ) {
+		$f = stmt_start( $tokens, $st );
+		if ( T_STRING === $tokens[$f][0] && 'wp_register_ability' === $tokens[$f][1] ) {
 			return array( $k, $f );
 		}
 	}
@@ -846,12 +846,12 @@ function build_registration( string $nameLit, array $vals ): string {
  * @param string $absText Raw text of src/Abstract_Core_Ability.php.
  */
 function transform_forward( string $pkgText, string $absText ): string {
-	$T = tkz( $pkgText );
-	$cls = parse_class( $T );
-	$M = parse_members( $T, $cls['open'], $cls['close'] );
-	$by = index_by_name( $M );
+	$tokens = tokenize_source( $pkgText );
+	$cls = parse_class( $tokens );
+	$members = parse_members( $tokens, $cls['open'], $cls['close'] );
+	$by = index_by_name( $members );
 
-	$abname = unquote( return_expr( $T, $by['ability_name'] ) );
+	$abname = unquote( return_expr( $tokens, $by['ability_name'] ) );
 	list( $dir, $pkgClass, $coreClass, $regMethod, $category ) = slug_parts( $abname );
 	if ( $cls['name'] !== $pkgClass ) {
 		fail( 'unexpected class name ' . $cls['name'] . ' for ability ' . $abname . ' (expected ' . $pkgClass . ')' );
@@ -872,7 +872,7 @@ function transform_forward( string $pkgText, string $absText ): string {
 		if ( null === $rec ) {
 			fail( 'authoring method missing in package class: ' . $m );
 		}
-		$vals[ $entry ] = return_expr( $T, $rec );
+		$vals[ $entry ] = return_expr( $tokens, $rec );
 	}
 	$nameLit = "'" . $abname . "'";
 
@@ -882,13 +882,13 @@ function transform_forward( string $pkgText, string $absText ): string {
 
 	/* --- register_content_query() prologue from input_schema() ------------- */
 	$inRec = $by['input_schema'];
-	$stmts = body_statements( $T, $inRec['open'], $inRec['close'] );
+	$stmts = body_statements( $tokens, $inRec['open'], $inRec['close'] );
 	$assigns = array();
 	$postTypesAt = -1;
 	$sawSpliceGuard = false;
 	foreach ( $stmts as $idx => $st ) {
-		$f = stmt_start( $T, $st );
-		$id = $T[ $f ][0];
+		$f = stmt_start( $tokens, $st );
+		$id = $tokens[ $f ][0];
 		if ( T_RETURN === $id ) {
 			continue; // the schema return itself becomes the registration entry
 		}
@@ -897,9 +897,9 @@ function transform_forward( string $pkgText, string $absText ): string {
 			continue;
 		}
 		if ( T_VARIABLE !== $id ) {
-			fail( 'unexpected statement in input_schema(): ' . token_repr( $T[ $f ] ) );
+			fail( 'unexpected statement in input_schema(): ' . token_repr( $tokens[ $f ] ) );
 		}
-		if ( '$post_types' === $T[ $f ][1] ) {
+		if ( '$post_types' === $tokens[ $f ][1] ) {
 			$postTypesAt = count( $assigns );
 		}
 		$assigns[] = $st;
@@ -913,13 +913,13 @@ function transform_forward( string $pkgText, string $absText ): string {
 
 	$probe = array();
 	foreach ( $assigns as $st ) {
-		$probe[] = stmt_text( $T, $st );
+		$probe[] = stmt_text( $tokens, $st );
 	}
 
 	/* --- assemble register_content_query() --------------------------------- */
 	$regCq = "\tprivate function " . $regMethod . "(): void {\n";
 	foreach ( $assigns as $idx => $st ) {
-		$regCq .= "\t\t" . stmt_text( $T, $st ) . "\n";
+		$regCq .= "\t\t" . stmt_text( $tokens, $st ) . "\n";
 		if ( $postTypesAt === $idx ) {
 			$regCq .= "\t\tif ( empty( \$post_types ) ) {\n";
 			$regCq .= "\t\t\treturn;\n";
@@ -972,16 +972,16 @@ function transform_forward( string $pkgText, string $absText ): string {
 
 	$constChunk = '';
 	$methodChunks = array();
-	foreach ( $M as $rec ) {
+	foreach ( $members as $rec ) {
 		$name = $rec['name'];
 		if ( 'const' === $rec['kind'] ) {
-			$constChunk .= "\t" . member_text( $T, $rec ) . "\n";
+			$constChunk .= "\t" . member_text( $tokens, $rec ) . "\n";
 			continue;
 		}
 		if ( in_array( $name, AUTHORING_METHODS, true ) ) {
 			continue; // consumed by the registration rebuild
 		}
-		$methodChunks[] = "\t" . member_text( $T, $rec ) . "\n";
+		$methodChunks[] = "\t" . member_text( $tokens, $rec ) . "\n";
 		$placeHelpers( $name );
 	}
 	if ( $pending !== array() ) {
@@ -1013,42 +1013,42 @@ function transform_forward( string $pkgText, string $absText ): string {
  *
  * @return array{string,array<string,string>} [ability name literal without quotes, entries key => expr text]
  */
-function parse_registration( array $T, array $stmt ): array {
+function parse_registration( array $tokens, array $stmt ): array {
 	list( $a, $b ) = $stmt;
-	$f = stmt_start( $T, $stmt );
-	'wp_register_ability' === $T[ $f ][1] || fail( 'not a wp_register_ability() call' );
-	$paren = fm( $T, $f + 1, $b );
-	$paren !== null && 40 === $T[ $paren ][0] || fail( 'wp_register_ability( missing ( at line ' . $T[ $f ][2] );
-	$arg1 = fm( $T, $paren + 1, $b );
+	$f = stmt_start( $tokens, $stmt );
+	'wp_register_ability' === $tokens[ $f ][1] || fail( 'not a wp_register_ability() call' );
+	$paren = next_meaningful_token( $tokens, $f + 1, $b );
+	$paren !== null && 40 === $tokens[ $paren ][0] || fail( 'wp_register_ability( missing ( at line ' . $tokens[ $f ][2] );
+	$arg1 = next_meaningful_token( $tokens, $paren + 1, $b );
 	$arg1 !== null || fail( 'wp_register_ability() first argument missing' );
-	$abname = unquote( $T[ $arg1 ][1] );
-	$comma = fm( $T, $arg1 + 1, $b );
-	$comma !== null && 44 === $T[ $comma ][0] || fail( 'wp_register_ability() entries not a comma-separated array' );
-	$arrTok = fm( $T, $comma + 1, $b );
-	$arrTok !== null && T_ARRAY === $T[ $arrTok ][0] || fail( 'registration entries must be array( ... )' );
-	$paren2 = fm( $T, $arrTok + 1, $b );
-	$paren2 !== null && 40 === $T[ $paren2 ][0] || fail( 'array( without ( in registration' );
-	$close = match_group( $T, $paren2 );
+	$abname = unquote( $tokens[ $arg1 ][1] );
+	$comma = next_meaningful_token( $tokens, $arg1 + 1, $b );
+	$comma !== null && 44 === $tokens[ $comma ][0] || fail( 'wp_register_ability() entries not a comma-separated array' );
+	$arrTok = next_meaningful_token( $tokens, $comma + 1, $b );
+	$arrTok !== null && T_ARRAY === $tokens[ $arrTok ][0] || fail( 'registration entries must be array( ... )' );
+	$paren2 = next_meaningful_token( $tokens, $arrTok + 1, $b );
+	$paren2 !== null && 40 === $tokens[ $paren2 ][0] || fail( 'array( without ( in registration' );
+	$close = match_group( $tokens, $paren2 );
 
 	$entries = array();
 	$i = $paren2 + 1;
 	while ( $i < $close ) {
-		$f2 = fm( $T, $i, $close );
+		$f2 = next_meaningful_token( $tokens, $i, $close );
 		if ( null === $f2 ) {
 			break;
 		}
-		if ( T_CONSTANT_ENCAPSED_STRING !== $T[ $f2 ][0] ) {
+		if ( T_CONSTANT_ENCAPSED_STRING !== $tokens[ $f2 ][0] ) {
 			break; // end of entries: trailing comma precedes the array close
 		}
-		$key = unquote( $T[ $f2 ][1] );
-		$arrow = fm( $T, $f2 + 1, $close );
-		$arrow !== null && T_DOUBLE_ARROW === $T[ $arrow ][0] || fail( "entry '$key' missing =>" );
+		$key = unquote( $tokens[ $f2 ][1] );
+		$arrow = next_meaningful_token( $tokens, $f2 + 1, $close );
+		$arrow !== null && T_DOUBLE_ARROW === $tokens[ $arrow ][0] || fail( "entry '$key' missing =>" );
 		$d = 0;
 		$vend = null;
 		$found = false;
 		for ( $j = $arrow + 1; $j <= $close; $j++ ) {
-			$d += struct_delta( $T[ $j ] );
-			if ( 0 === $d && 44 === $T[ $j ][0] ) {
+			$d += struct_delta( $tokens[ $j ] );
+			if ( 0 === $d && 44 === $tokens[ $j ][0] ) {
 				$vend = $j - 1;
 				$found = true;
 				break;
@@ -1061,7 +1061,7 @@ function parse_registration( array $T, array $stmt ): array {
 		if ( ! $found || null === $vend || $vend < $arrow + 1 ) {
 			fail( "entry '$key' without value" );
 		}
-		$entries[ $key ] = span_trim( $T, $arrow + 1, $vend );
+		$entries[ $key ] = span_trim( $tokens, $arrow + 1, $vend );
 		$i = $vend + 2; // skip ','
 	}
 	return array( $abname, $entries );
@@ -1095,17 +1095,17 @@ function build_manifest( string $abname ): string {
  * Reverse transform: core class text -> package class text.
  */
 function transform_reverse( string $coreText ): string {
-	$T = tkz( $coreText );
-	$cls = parse_class( $T );
-	$M = parse_members( $T, $cls['open'], $cls['close'] );
-	$by = index_by_name( $M );
+	$tokens = tokenize_source( $coreText );
+	$cls = parse_class( $tokens );
+	$members = parse_members( $tokens, $cls['open'], $cls['close'] );
+	$by = index_by_name( $members );
 	isset( $by['register_content_query'] ) || fail( 'no register_content_query() in core form' );
 
 	$cqRec = $by['register_content_query'];
-	$stmts = body_statements( $T, $cqRec['open'], $cqRec['close'] );
+	$stmts = body_statements( $tokens, $cqRec['open'], $cqRec['close'] );
 
-	list( $regIdx, $regTok ) = array_values( registration_stmt( $T, $stmts ) );
-	list( $abname, $entries ) = parse_registration( $T, $stmts[ $regIdx ] );
+	list( $regIdx, $regTok ) = array_values( registration_stmt( $tokens, $stmts ) );
+	list( $abname, $entries ) = parse_registration( $tokens, $stmts[ $regIdx ] );
 	list( $dir, $pkgClass, $coreClass, $regMethod, $category ) = slug_parts( $abname );
 	if ( $cls['name'] !== $coreClass ) {
 		fail( 'core class name ' . $cls['name'] . ' does not match derived ' . $coreClass . ' for ' . $abname );
@@ -1115,8 +1115,8 @@ function transform_reverse( string $coreText ): string {
 	$guardCount = 0;
 	$assigns = array();
 	for ( $k = 0; $k < $regIdx; $k++ ) {
-		$f = stmt_start( $T, $stmts[ $k ] );
-		$id = $T[ $f ][0];
+		$f = stmt_start( $tokens, $stmts[ $k ] );
+		$id = $tokens[ $f ][0];
 		if ( T_IF === $id ) {
 			$guardCount++;
 			continue;
@@ -1125,7 +1125,7 @@ function transform_reverse( string $coreText ): string {
 			$assigns[] = $stmts[ $k ];
 			continue;
 		}
-		fail( 'unexpected statement before wp_register_ability(): ' . token_repr( $T[ $f ] ) );
+		fail( 'unexpected statement before wp_register_ability(): ' . token_repr( $tokens[ $f ] ) );
 	}
 	1 === $guardCount || fail( 'expected exactly one void early-return guard, found ' . $guardCount );
 
@@ -1158,7 +1158,7 @@ function transform_reverse( string $coreText ): string {
 
 	$prologue = '';
 	foreach ( $assigns as $st ) {
-		$prologue .= "\t\t" . stmt_text( $T, $st ) . "\n\n";
+		$prologue .= "\t\t" . stmt_text( $tokens, $st ) . "\n\n";
 	}
 	$authors['input_schema'] = $prologue . "\t\t" . 'return ' . reindent( $entries['input_schema'] ?? '', -2 ) . ';' . "\n";
 
@@ -1191,10 +1191,10 @@ function transform_reverse( string $coreText ): string {
 
 	$sections = array();
 	$constSections = array();
-	foreach ( $M as $rec ) {
+	foreach ( $members as $rec ) {
 		$name = $rec['name'];
 		if ( 'const' === $rec['kind'] ) {
-			$constSections[] = "\t" . member_text( $T, $rec ) . "\n";
+			$constSections[] = "\t" . member_text( $tokens, $rec ) . "\n";
 			continue;
 		}
 		if ( 'register' === $name || 'register_content_query' === $name ) {
@@ -1204,7 +1204,7 @@ function transform_reverse( string $coreText ): string {
 			/* body-equality guard: only drop when identical to the base-class helper */
 			$mismatch = null;
 			for ( $i = $rec['open'] + 1; $i <= $rec['close'] - 1; $i++ ) {
-				$t = $T[ $i ];
+				$t = $tokens[ $i ];
 				if ( is_skipped( $t ) ) {
 					continue;
 				}
@@ -1215,7 +1215,7 @@ function transform_reverse( string $coreText ): string {
 			}
 			continue; // drop
 		}
-		$sections[] = "\t" . member_text( $T, $rec ) . "\n";
+		$sections[] = "\t" . member_text( $tokens, $rec ) . "\n";
 	}
 
 	/* authoring methods, in fixed order, after constants */
@@ -1415,15 +1415,15 @@ function run( array $o ): int {
 
 /** Ability name alone (for default reverse out path). */
 function reverse_ability_name( string $coreText ): string {
-	$T = tkz( $coreText );
-	$cls = parse_class( $T );
-	$M = parse_members( $T, $cls['open'], $cls['close'] );
-	$by = index_by_name( $M );
+	$tokens = tokenize_source( $coreText );
+	$cls = parse_class( $tokens );
+	$members = parse_members( $tokens, $cls['open'], $cls['close'] );
+	$by = index_by_name( $members );
 	isset( $by['register_content_query'] ) || fail( 'no register_content_query() in core form' );
 	$rec = $by['register_content_query'];
-	$stmts = body_statements( $T, $rec['open'], $rec['close'] );
-	list( $idx ) = registration_stmt( $T, $stmts );
-	list( $abname, $entries ) = parse_registration( $T, $stmts[ $idx ] );
+	$stmts = body_statements( $tokens, $rec['open'], $rec['close'] );
+	list( $idx ) = registration_stmt( $tokens, $stmts );
+	list( $abname, $entries ) = parse_registration( $tokens, $stmts[ $idx ] );
 	return $abname;
 }
 

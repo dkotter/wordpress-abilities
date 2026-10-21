@@ -24,6 +24,9 @@ $package_root = dirname( __DIR__ );
 require $package_root . '/vendor/autoload.php';
 require_once $package_root . '/vendor/yoast/phpunit-polyfills/phpunitpolyfills-autoload.php';
 
+// Shared test-harness definitions for fixture/backfill parity (see file docblock).
+require_once $package_root . '/tests/Fixtures/content-category.php';
+
 $_tests_dir = getenv( 'WP_TESTS_DIR' );
 if ( ! $_tests_dir || ! file_exists( $_tests_dir . '/includes/functions.php' ) ) {
 	$_tests_dir = getenv( 'WP_PHPUNIT__TESTS_DIR' );
@@ -92,16 +95,19 @@ if ( 'off' !== $_fixture_api_mode ) {
 			 * default category set: 6.9-7.1 ship only `site` and `user`, so the
 			 * `content` category (added in core 7.2, per the fixture snapshot
 			 * this shim mirrors) is missing and package registration would
-			 * fail closed with "category not registered". Definition matches
-			 * the fixture/trunk registrar verbatim; the guard makes newer
+			 * fail closed with "category not registered". Definition comes
+			 * from the shared test-harness constant both this backfill and
+			 * the fixture/trunk registrar reference; the guard makes newer
 			 * hosts (and the active fixture) no-ops.
 			 */
-			if ( function_exists( 'wp_register_ability_category' ) && function_exists( 'wp_has_ability_category' ) && ! wp_has_ability_category( 'content' ) ) {
+			if ( function_exists( 'wp_register_ability_category' ) && function_exists( 'wp_has_ability_category' ) && ! wp_has_ability_category( WP_ABILITIES_TEST_CONTENT_CATEGORY['slug'] ) ) {
 				wp_register_ability_category(
-					'content',
+					WP_ABILITIES_TEST_CONTENT_CATEGORY['slug'],
 					array(
-						'label'       => __( 'Content' ),
-						'description' => __( 'Abilities that retrieve or manage posts and other content.' ),
+						// phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText -- text is single-sourced via the shared const.
+						'label'       => __( WP_ABILITIES_TEST_CONTENT_CATEGORY['label'] ),
+						// phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText -- text is single-sourced via the shared const.
+						'description' => __( WP_ABILITIES_TEST_CONTENT_CATEGORY['description'] ),
 					)
 				);
 			}

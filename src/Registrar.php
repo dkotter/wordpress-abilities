@@ -204,28 +204,28 @@ final class Registrar {
 			return true;
 		}
 
-		// Gate: the class must be loadable (version-skew awareness).
+		// Gate 2: the class must be loadable (version-skew awareness).
 		if ( ! class_exists( $entry['class'] ) ) {
 			return false;
 		}
 
-		// Gate: consumer selection policy.
+		// Gate 3: consumer selection policy.
 		$filter = isset( $args['filter'] ) && is_callable( $args['filter'] ) ? $args['filter'] : null;
 		if ( null !== $filter && ! (bool) $filter( $name, $entry ) ) {
 			return false;
 		}
 
-		// Gate 2: core already provides this ability under the same name.
+		// Gate 4: core already provides this ability under the same name.
 		if ( wp_has_ability( $name ) ) {
 			return true;
 		}
 
-		// Gate 3: package support floor.
+		// Gate 5: package support floor.
 		if ( version_compare( get_bloginfo( 'version' ), $entry['min_wp_version'], '<' ) ) {
 			return false;
 		}
 
-		// Gate 4: public-only selection probes the ability's own meta.
+		// Gate 6: public-only selection probes the ability's own meta.
 		if ( ! empty( $args['public_only'] ) ) {
 			$probe = new $entry['class']();
 			if ( true !== $probe->get_meta_item( 'public', false ) ) {
@@ -233,14 +233,15 @@ final class Registrar {
 			}
 		}
 
-		// Gate 5: support-surface features, with polyfill attempt.
+		// Gate 7: support-surface features, with polyfill attempt.
 		foreach ( (array) $entry['requires'] as $feature ) {
 			if ( ! Features::is_available( $feature ) && ! Features::load_polyfill( $feature ) ) {
 				return false;
 			}
 		}
 
-		// Provenance meta merged for consumption (stability, lineage).
+		// Gate 8: register via the core `ability_class` mechanism, merging
+		// provenance meta (stability, lineage).
 		$meta = array(
 			'stability' => $entry['tier'],
 		);

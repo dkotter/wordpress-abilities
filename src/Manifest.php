@@ -42,7 +42,7 @@ final class Manifest {
 	 */
 	public static function all(): array {
 		return array(
-			'core/content-query' => array(
+			'core/content-query'  => array(
 				'name'           => 'core/content-query',
 				/*
 				 * `::class` resolves to the FQCN without loading the class,
@@ -59,6 +59,48 @@ final class Manifest {
 				// WP2-flagged for human confirmation: proposal URL to verify against
 				// the landed core work (wordpress-develop PR 12195) before release.
 				'proposal'       => 'https://github.com/WordPress/wordpress-develop/pull/12195',
+			),
+			/*
+			 * The write trio below is a faithful port of WordPress/ai PR #1025
+			 * (author @jorgefilipecosta), on the package's dotted field paths.
+			 *
+			 * Tier: the PR is a filed core proposal, not landed core, so the
+			 * trio is stable (§7.2: a `core/` name is adopted at proposal
+			 * filing). The entries flip to core with `core_since` set once
+			 * the abilities land in an actual WordPress release.
+			 */
+			'core/content-create' => array(
+				'name'           => 'core/content-create',
+				'class'          => Content\Content_Create::class,
+				'category'       => 'content',
+				'tier'           => self::TIER_STABLE,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array( 'show_in_abilities' ),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1025',
+			),
+			'core/content-update' => array(
+				'name'           => 'core/content-update',
+				'class'          => Content\Content_Update::class,
+				'category'       => 'content',
+				'tier'           => self::TIER_STABLE,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array( 'show_in_abilities' ),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1025',
+			),
+			'core/content-delete' => array(
+				'name'           => 'core/content-delete',
+				'class'          => Content\Content_Delete::class,
+				'category'       => 'content',
+				'tier'           => self::TIER_STABLE,
+				'min_wp_version' => '6.9',
+				'core_since'     => null,
+				'requires'       => array( 'show_in_abilities' ),
+				'renamed_from'   => null,
+				'proposal'       => 'https://github.com/WordPress/ai/pull/1025',
 			),
 		);
 	}

@@ -80,6 +80,9 @@ Full rules, the promotion path, and the rename protocol are in
 | Name | Tier | Category | Notes |
 |---|---|---|---|
 | `core/content-query` | core | content | Backport of the readonly content query ability landed in WordPress core 7.2 (`core_since: 7.2`). On 7.2+ core provides it and the Registrar skips it; on 6.9–7.1 the package serves it under the same name. Requires the `show_in_abilities` support feature (polyfilled where core lacks it). |
+| `core/content-create` | stable | content | Port of the content create ability from [WordPress/ai PR #1025](https://github.com/WordPress/ai/pull/1025) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Creates posts of types exposed to abilities under the field names `core/content-query` returns. |
+| `core/content-update` | stable | content | Port of the content update ability from [WordPress/ai PR #1025](https://github.com/WordPress/ai/pull/1025) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Updates a post by ID; fields left out keep their current values. |
+| `core/content-delete` | stable | content | Port of the content delete ability from [WordPress/ai PR #1025](https://github.com/WordPress/ai/pull/1025) (`core_since: null` — flips to tier `core` when it lands in WordPress core). Trashes a post by ID, or deletes it permanently with `force`. |
 
 ## Roadmap (not yet)
 

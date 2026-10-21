@@ -35,6 +35,15 @@ The entries below describe the current prototype state._
     by the package under the same name on older WordPress, skipped by the
     Registrar wherever core provides it; satisfies the `show_in_abilities`
     support feature via a polyfill where core lacks it.
+- Write content abilities `core/content-create`, `core/content-update`,
+  and `core/content-delete` — tier `stable` (core-destined, proposal
+  filed): faithful ports of the create,
+  update, and trash-or-delete content abilities from
+  [WordPress/ai PR #1025](https://github.com/WordPress/ai/pull/1025) by
+  @jorgefilipecosta, on this package's dotted field paths
+  (`title.raw`, `content.raw`, `excerpt.raw`, `author.slug`, `date.local`,
+  `date.gmt`); the shared write logic lives in
+  `WordPress\Abilities\Content\Abstract_Content_Write`.
 - Test infrastructure: PHPUnit suites (`ManifestTest`, `RegistrarTest`,
   per-ability tests with permission negative/positive coverage on every gate
   path), and a dual wp-env matrix — WordPress trunk (core-provided Abilities

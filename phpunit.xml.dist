@@ -5,9 +5,24 @@
 	colors="true"
 	executionOrder="default"
 	cacheDirectory=".phpunit-cache">
+	<!--
+		One WP boot, sequenced deliberately. RegistrarTest owns the lazy init
+		firing (its first test asserts did_action() === 0 and queues the
+		deferred hooks; its second test fires the registry via the
+		Registrar's reopen helper); ManifestTest is registry-free; the
+		abilities tests read a settled registry produced by 1-registrar.
+		PHPUnit orders nested testsuites alphabetically, so the numbered
+		prefixes encode the required sequence. Do not re-sort these entries.
+	-->
 	<testsuites>
-		<testsuite name="wordpress-abilities">
-			<directory>tests</directory>
+		<testsuite name="1-registrar">
+			<file>tests/RegistrarTest.php</file>
+		</testsuite>
+		<testsuite name="2-manifest">
+			<file>tests/ManifestTest.php</file>
+		</testsuite>
+		<testsuite name="3-abilities">
+			<directory>tests/Abilities</directory>
 		</testsuite>
 	</testsuites>
 	<source>

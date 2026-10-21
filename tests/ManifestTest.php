@@ -67,14 +67,15 @@ final class ManifestTest extends TestCase {
 	 * renamed_from collides with no live name.
 	 */
 	public function test_renamed_from_collides_with_no_live_name(): void {
-		$live = Manifest::names();
+		$live    = Manifest::names();
+		$renamed = array();
 		foreach ( Manifest::all() as $name => $entry ) {
-			if ( null === $entry['renamed_from'] ) {
-				continue;
+			if ( null !== $entry['renamed_from'] ) {
+				$renamed[ $name ] = $entry['renamed_from'];
+				self::assertNotSame( $name, $entry['renamed_from'], sprintf( '%s must not rename to itself.', $name ) );
 			}
-			self::assertNotContains( $entry['renamed_from'], $live, sprintf( '%s: renamed_from must not collide with a live name.', $name ) );
-			self::assertNotSame( $name, $entry['renamed_from'] );
 		}
+		self::assertSame( array(), array_values( array_intersect( $renamed, $live ) ), 'No renamed_from value may collide with a live name.' );
 	}
 
 	/**

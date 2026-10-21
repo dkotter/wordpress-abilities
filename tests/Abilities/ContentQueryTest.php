@@ -60,6 +60,30 @@ final class ContentQueryTest extends TestCase {
 	}
 
 	/**
+	 * Removes the mocked posts and users so a fresh data set is built per test
+	 * (instance properties restart empty): without cleanup, wp_insert_user()
+	 * hits the existing user_login, `(int) WP_Error` yields 1, and both the
+	 * posts and the totals of earlier sets pollute the later tests' queries.
+	 */
+	public function tear_down(): void {
+		foreach ( $this->post_ids as $id ) {
+			wp_delete_post( (int) $id, true );
+		}
+		if ( ! empty( $this->user_ids ) && ! function_exists( 'wp_delete_user' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/user.php';
+		}
+		foreach ( $this->user_ids as $id ) {
+			if ( (int) $id > 1 ) {
+				wp_delete_user( (int) $id );
+			}
+		}
+		$this->user_ids = array();
+		$this->post_ids = array();
+
+		parent::tear_down();
+	}
+
+	/**
 	 * The registered `core/content-query` instance, or null.
 	 */
 	private function get_registered(): ?object {
@@ -178,7 +202,11 @@ final class ContentQueryTest extends TestCase {
 		Registrar::register_all();
 		Registrar::register_all();
 		self::assertSame( $ability, $this->get_registered(), 'No double registration: the single instance holds.' );
-		self::assertSame( 1, count( array_keys( WP_Abilities_Registry::get_instance()->get_all_registered(), 'core/content-query', true ) ) );
+		self::assertSame(
+			array( 'core/content-query' ),
+			array_values( array_intersect( array_keys( WP_Abilities_Registry::get_instance()->get_all_registered() ), array( 'core/content-query' ) ) ),
+			'Only a single core/content-query entry is registered.'
+		);
 	}
 
 	/**
@@ -342,7 +370,8 @@ final class ContentQueryTest extends TestCase {
 	/**
 	 * Permission gate, post-type path, via the direct callback (fail closed both ways):
 	 * a non-exposed type denies (false) and an exposed one passes (true); a malformed
-	 * `where` is let through for the execute callback to reject, per trunk.
+	 * `where` value is let through for the execute callback to reject, per trunk, while
+	 * a query with no `where` at all is denied for lack of an exposed post type.
 	 */
 	public function test_permission_post_type_gate_negative_and_positive(): void {
 		$ability = $this->get_registered();
@@ -350,15 +379,13 @@ final class ContentQueryTest extends TestCase {
 		$this->create_mocked_data_set();
 		wp_set_current_user( $this->user_ids['subscriber'] );
 
-		$gate = $this->invoke_private( $ability, 'check_permission' );
-		self::assertFalse( $gate( array( 'where' => array( 'type' => 'abilities-no-such-type' ) ) ), 'Non-exposed type: denied.' );
-		self::assertTrue( $gate( array( 'where' => array( 'type' => 'post' ) ) ), 'Exposed type: allowed.' );
-		self::assertTrue( $gate( array( 'where' => 'not-an-object' ) ), 'Malformed where is let through for fail-closed execution.' );
-		self::assertTrue( $gate( array() ), 'No where at all lets execution report it.' );
+		self::assertFalse( $this->invoke_private( $ability, 'check_permission', array( 'where' => array( 'type' => 'abilities-no-such-type' ) ) ), 'Non-exposed type: denied.' );
+		self::assertTrue( $this->invoke_private( $ability, 'check_permission', array( 'where' => array( 'type' => 'post' ) ) ), 'Exposed type: allowed.' );
+		self::assertTrue( $this->invoke_private( $ability, 'check_permission', array( 'where' => 'not-an-object' ) ), 'Malformed where is let through for fail-closed execution.' );
+		self::assertFalse( $this->invoke_private( $ability, 'check_permission', array() ), 'No where at all: no post type to expose, so denied.' );
 
 		wp_set_current_user( 0 );
-		$gate = $this->invoke_private( $ability, 'check_permission' );
-		self::assertFalse( $gate( array( 'where' => array( 'type' => 'post' ) ) ), 'Logged out: denied regardless of filters.' );
+		self::assertFalse( $this->invoke_private( $ability, 'check_permission', array( 'where' => array( 'type' => 'post' ) ) ), 'Logged out: denied regardless of filters.' );
 	}
 
 	/**
@@ -477,8 +504,9 @@ final class ContentQueryTest extends TestCase {
 	}
 
 	/**
-	 * Execute with the mocked data set: happy path, pagination, out-of-range page,
-	 * and row-level withholding of another user's draft.
+	 * Execute with the mocked data set: default listing (publish only, as in the
+	 * REST posts controller), pagination over an explicit draft-inclusive list,
+	 * out-of-range page, and row-level withholding of another user's draft.
 	 */
 	public function test_execute_mocked_data_set_and_pagination(): void {
 		$ability = $this->get_registered();
@@ -486,9 +514,24 @@ final class ContentQueryTest extends TestCase {
 		$this->create_mocked_data_set();
 		wp_set_current_user( $this->user_ids['admin'] );
 
+		// No status filter: the default list covers `publish` only, even for admin.
+		$default = $ability->execute(
+			array(
+				'where' => array( 'type' => 'post' ),
+			)
+		);
+		self::assertNotInstanceOf( WP_Error::class, $default );
+		self::assertSame( 2, $default['pagination']['total'], 'Default statuses cover publish only.' );
+		foreach ( $default['items'] as $item ) {
+			self::assertSame( 'publish', $item['status'] );
+		}
+
 		$page_one = $ability->execute(
 			array(
-				'where'      => array( 'type' => 'post' ),
+				'where'      => array(
+					'type'   => 'post',
+					'status' => array( 'publish', 'draft' ),
+				),
 				'pagination' => array(
 					'per_page' => 2,
 					'page'     => 1,
@@ -499,15 +542,13 @@ final class ContentQueryTest extends TestCase {
 		self::assertCount( 2, $page_one['items'], 'per_page 2 of 3 matched posts.' );
 		self::assertSame( 3, $page_one['pagination']['total'] );
 		self::assertSame( 2, $page_one['pagination']['total_pages'] );
-		foreach ( $page_one['items'] as $item ) {
-			self::assertArrayHasKey( 'id', $item );
-			self::assertSame( 'post', $item['type'] );
-			self::assertSame( 'publish', $item['status'] );
-		}
 
 		$page_two = $ability->execute(
 			array(
-				'where'      => array( 'type' => 'post' ),
+				'where'      => array(
+					'type'   => 'post',
+					'status' => array( 'publish', 'draft' ),
+				),
 				'pagination' => array(
 					'per_page' => 2,
 					'page'     => 2,

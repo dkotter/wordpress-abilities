@@ -34,11 +34,12 @@ final class RegistrarTest extends TestCase {
 	private static array $wrong_usage = array();
 
 	/**
-	 * Version-floor filter closure, kept for removal.
+	 * Saved original value of $GLOBALS['wp_version'] while the version floor
+	 * is applied (null when no floor is active).
 	 *
-	 * @var \Closure|null
+	 * @var string|null
 	 */
-	private static ?\Closure $version_floor = null;
+	private static ?string $version_floor_saved = null;
 
 	/**
 	 * Starts recording _doing_it_wrong() traffic for the whole class.
@@ -88,21 +89,50 @@ final class RegistrarTest extends TestCase {
 
 	/**
 	 * Applies a version floor of 5.0 so the package support-floor gate can be
-	 * tested against the real get_bloginfo( 'version' ) pipeline.
+	 * tested against the real get_bloginfo( 'version' ) pipeline. Trunk's
+	 * get_bloginfo() reads the $wp_version global directly for this output,
+	 * so the spoof point is the global itself: the pre_option_ wp_version
+	 * filter never fires for it.
 	 */
 	private static function apply_version_floor(): void {
-		self::$version_floor = static fn (): string => '5.0';
-		add_filter( 'pre_option_wp_version', self::$version_floor );
+		global $wp_version;
+		self::$version_floor_saved = $wp_version;
+		$GLOBALS['wp_version']     = '5.0';
 	}
 
 	/**
 	 * Removes the version floor.
 	 */
 	private static function clear_version_floor(): void {
-		if ( null !== self::$version_floor ) {
-			remove_filter( 'pre_option_wp_version', self::$version_floor );
-			self::$version_floor = null;
+		if ( null !== self::$version_floor_saved ) {
+			$GLOBALS['wp_version']     = self::$version_floor_saved;
+			self::$version_floor_saved = null;
 		}
+	}
+
+	/**
+	 * Reopens a fresh wp_abilities_api_init registration window.
+	 *
+	 * The real API seals registration once the lazy action has fired:
+	 * wp_register_ability() requires doing_action( 'wp_abilities_api_init' ),
+	 * and the action fires exactly once per boot. Tests that must exercise a
+	 * later registration flow therefore replay a pre-init boot: reset the
+	 * Registrar's static bookkeeping and the registry singleton, clear the
+	 * fired-action counter, then let test code queue hooks and re-fire by
+	 * calling Registry::get_instance() again. Only the abilities registry is
+	 * reset; the categories registry singleton persists so the restored core
+	 * categories are not double-registered.
+	 */
+	private static function open_fresh_init_window(): void {
+		$hooked     = new ReflectionProperty( Registrar::class, 'hooked' );
+		$registered = new ReflectionProperty( Registrar::class, 'registered' );
+		$hooked->setValue( null, false );
+		$registered->setValue( null, array() );
+
+		$instance = new ReflectionProperty( WP_Abilities_Registry::class, 'instance' );
+		$instance->setValue( null, null );
+
+		$GLOBALS['wp_actions']['wp_abilities_api_init'] = 0;
 	}
 
 	/**
@@ -169,7 +199,10 @@ final class RegistrarTest extends TestCase {
 		self::assertSame( 'core/content-query', $captured[0][0] );
 		self::assertSame( Manifest::get( 'core/content-query' ), $captured[0][1], 'The filter receives the manifest entry.' );
 		self::reset_wrong_usage();
-		Registrar::register_all();
+
+		self::open_fresh_init_window();
+		Registrar::register_all(); // Defers: did_action() reads 0 again.
+		WP_Abilities_Registry::get_instance(); // Re-fires wp_abilities_api_init.
 		self::assertTrue( wp_has_ability( 'core/content-query' ), 'Default policy after the filtered call resolves the name one way or another.' );
 	}
 

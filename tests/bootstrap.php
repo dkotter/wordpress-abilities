@@ -57,6 +57,33 @@ if ( 'off' !== $_fixture_api_mode ) {
 			require_once __DIR__ . '/Fixtures/mu-plugins/load-abilities-api.php';
 		}
 	);
+
+	/*
+	 * The WP core PHPUnit test suite deliberately unhooks the core ability and
+	 * category registrars (wp-phpunit includes/functions.php hooks
+	 * _unhook_core_abilities_registration and _unhook_core_abilities_categories_
+	 * registration at priority 1 on wp_abilities_api_init /
+	 * wp_abilities_api_categories_init), so every test run boots with an EMPTY
+	 * registry. The registry rejects any ability whose category is not
+	 * registered, so nothing could ever register in tests. Re-add core's own
+	 * category registrar via a closure at priority 2: the closure has a
+	 * different hook id than the plain-function id the unhooker removes, and
+	 * wp_register_ability_category() is only valid while
+	 * doing_action( 'wp_abilities_api_categories_init' ), which this callback
+	 * runs within. Core abilities stay unhooked on purpose: the package copies
+	 * register instead, and provenance meta tells them apart (see
+	 * ContentQueryTest).
+	 */
+	// @phpstan-ignore function.notFound (core test-suite helper)
+	tests_add_filter(
+		'wp_abilities_api_categories_init',
+		static function (): void {
+			if ( function_exists( 'wp_register_core_ability_categories' ) ) {
+				wp_register_core_ability_categories();
+			}
+		},
+		2
+	);
 }
 
 require $_tests_dir . '/includes/bootstrap.php';

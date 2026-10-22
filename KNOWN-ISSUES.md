@@ -1,26 +1,15 @@
 # KNOWN-ISSUES.md
 
 Known deviations, deferred work, and provenance notes for the
-`wordpress/abilities` package, recorded at publish time (2026-10-21).
-Everything here is a conscious, documented decision — none of it is a
-regression to fix silently.
+`wordpress/abilities` package. Everything here is a conscious, documented
+decision — none of it is a regression to fix silently.
+
+This file tracks open items only: an entry is removed once fixed. The
+closing commit and changelog carry the resolution; git history is the
+archive of resolved entries.
 
 ## 1. Registrar deviations and gaps (post-publish fixes)
 
-- **P6 — `Registrar::register()` lacks a `$hooked` guard. — RESOLVED
-  (2026-10-21).** Each pre-init call queued another
-  `wp_abilities_api_init` closure calling `try_register()`. Registration
-  itself remained idempotent (Gate 1), so the observable outcome was
-  unchanged; the duplicate closures were waste, not a correctness bug.
-  Fixed by a per-name `static $deferred` guard in `register()`, mirroring
-  `register_all()`'s `$hooked` flag — repeat pre-init calls for the same
-  name queue no second closure; different names defer independently.
-  No observable behavior change. Both suites green (57 tests, 504
-  assertions, 1 skipped on trunk and stable).
-- **P7 — Gate order deviates from spec §6.3 bullet 3:** the `class_exists`
-  gate (2) and the consumer `filter` gate (3) run *before* the
-  `wp_has_ability()` core-skip gate (4). Consequence: the consumer filter can
-  veto core-provided ability names. Documented as-is; fix in a follow-up.
 - **P8 — the Registrar does not ensure manifest-declared categories exist.**
   Manifest abilities declare `category => 'content'`, which core provides
   only from 7.2. On WP 7.1.x hosts (real pre-7.2 API; only `site` and `user`

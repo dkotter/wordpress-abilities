@@ -23,9 +23,10 @@ The entries below describe the current prototype state._
     proposal paper trail). What exists; when it's on is consumer policy.
   - `Registrar` — opt-in, idempotent, timing-aware registration through the
     Abilities API (`register_all()` / `register()`), with version gating,
-    skipping of abilities core already provides, consumer-side selection
-    args, and provenance meta stamping (`source`, `package_version`,
-    `stability`). The package never registers itself.
+    skipping of abilities core already provides (the skip precedes consumer
+    selection, so a `filter` or `public_only` can never veto a core-provided
+    name), consumer-side selection args, and provenance meta stamping
+    (`source`, `package_version`, `stability`). The package never registers itself.
   - `Abstract_Core_Ability` — the core-landing-ready base class all
     abilities extend (self-contained, closures, core coding style, text
     domain `default`).

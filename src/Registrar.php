@@ -65,7 +65,9 @@ final class Registrar {
 	 *                                        MCP-tool style exposure. Default false.
 	 *     @type callable|null  $filter      Optional. Selection policy as
 	 *                                        `fn( string $name, array $entry ): bool`;
-	 *                                        return false to skip an ability.
+	 *                                        return false to skip an ability. Core-provided
+	 *                                        names resolve before the filter runs, so the
+	 *                                        filter can never veto them.
 	 * }
 	 * @return void
 	 */
@@ -193,11 +195,13 @@ final class Registrar {
 	 * API guard logs via _doing_it_wrong(); everything else is a non-event.
 	 *
 	 * 1. Registered in this process already: idempotence.
-	 * 2. The ability class must be loadable: a stale bundle copy missing a
+	 * 2. `wp_has_ability()`: core already provides the name (the core_since
+	 *    mechanism; on 7.2+ the backported trio self-skips). Core-provided
+	 *    names resolve as available before loadability and consumer
+	 *    selection run, so a consumer `filter` can never veto them.
+	 * 3. The ability class must be loadable: a stale bundle copy missing a
 	 *    class that the manifest knows simply registers nothing.
-	 * 3. Consumer `filter` selection policy.
-	 * 4. `wp_has_ability()`: core already provides the name (the core_since
-	 *    mechanism; on 7.2+ the backported trio self-skips).
+	 * 4. Consumer `filter` selection policy.
 	 * 5. WordPress version vs. the entry's min_wp_version support floor.
 	 * 6. `public_only`: probe the ability's own `public` meta.
 	 * 7. Support-surface `requires`: every feature must be available,
@@ -216,20 +220,22 @@ final class Registrar {
 			return true;
 		}
 
-		// Gate 2: the class must be loadable (version-skew awareness).
+		// Gate 2: core already provides this ability under the same name.
+		// Availability resolves before loadability and consumer selection,
+		// so a consumer filter can never veto a core-provided name.
+		if ( wp_has_ability( $name ) ) {
+			return true;
+		}
+
+		// Gate 3: the class must be loadable (version-skew awareness).
 		if ( ! class_exists( $entry['class'] ) ) {
 			return false;
 		}
 
-		// Gate 3: consumer selection policy.
+		// Gate 4: consumer selection policy.
 		$filter = isset( $args['filter'] ) && is_callable( $args['filter'] ) ? $args['filter'] : null;
 		if ( null !== $filter && ! (bool) $filter( $name, $entry ) ) {
 			return false;
-		}
-
-		// Gate 4: core already provides this ability under the same name.
-		if ( wp_has_ability( $name ) ) {
-			return true;
 		}
 
 		// Gate 5: package support floor.

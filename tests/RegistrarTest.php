@@ -3,7 +3,7 @@
  * Tests: Registrar behavior (HANDOFF §10.3, §14 WP2).
  *
  * Tests run in declaration order inside one WP boot; registration state is
- * therefore sequenced deliberately. The only manifest name
+ * therefore sequenced deliberately. Only one manifest name
  * (`core/content-query`) may itself be core-provided on trunk (the package
  * copy then self-skips before the gates below it run), so the gate paths
  * that need a package-owned, non-public vehicle — the version floor and
@@ -347,7 +347,10 @@ final class RegistrarTest extends TestCase {
 
 	/**
 	 * 3. Post-init negative gates: public_only selection and the consumer
-	 * 'filter' callable (which receives name + manifest entry).
+	 * 'filter' callable (which receives name + manifest entry). Per the
+	 * HANDOFF §6.3 gate order, the core-provided skip precedes consumer
+	 * selection: a filter can never veto a core-provided name, and is
+	 * never even consulted for one.
 	 */
 	public function test_public_only_and_consumer_filter_gates(): void {
 		// The synthetic ability authors public=false.
@@ -359,10 +362,29 @@ final class RegistrarTest extends TestCase {
 			$captured[] = array( $name, $entry );
 			return false;
 		};
-		self::assertFalse( Registrar::register( 'core/content-query', array( 'filter' => $filter ) ), 'Consumer filter returning false skips.' );
+
+		/*
+		 * The consumer filter veto, driven through a name core never
+		 * provides: only `core/content-query` can be core-provided (on
+		 * trunk), so this path is deterministic on both envs — and the
+		 * first init window ran under the version floor, so the name is
+		 * not in-process registered here either.
+		 */
+		self::assertFalse( Registrar::register( 'core/content-create', array( 'filter' => $filter ) ), 'Consumer filter returning false skips.' );
 		self::assertCount( 1, $captured, 'The filter receives exactly the attempted ability.' );
-		self::assertSame( 'core/content-query', $captured[0][0] );
-		self::assertSame( Manifest::get( 'core/content-query' ), $captured[0][1], 'The filter receives the manifest entry.' );
+		self::assertSame( 'core/content-create', $captured[0][0] );
+		self::assertSame( Manifest::get( 'core/content-create' ), $captured[0][1], 'The filter receives the manifest entry.' );
+
+		/*
+		 * P7 core-skip precedence: on a host where core itself provides
+		 * `core/content-query` (trunk), the skip gate resolves the name
+		 * before consumer selection runs — the veto filter above is never
+		 * consulted for it.
+		 */
+		if ( wp_has_ability( 'core/content-query' ) ) {
+			self::assertTrue( Registrar::register( 'core/content-query', array( 'filter' => $filter ) ), 'A consumer filter cannot veto a core-provided name.' );
+			self::assertCount( 1, $captured, 'The filter is never consulted for a core-provided name.' );
+		}
 		self::reset_wrong_usage();
 
 		// Reopen the init window; drive a full positive registration of the
@@ -439,7 +461,38 @@ final class RegistrarTest extends TestCase {
 	}
 
 	/**
-	 * 6. API-absence guard: _doing_it_wrong fires for both entry points and
+	 * 6. P7 core-skip precedence (HANDOFF §6.3 bullet 3): the
+	 * core-provided skip gate precedes consumer selection, so a `filter`
+	 * can never veto a name the registry already provides. Simulates the
+	 * WP 7.2+ host state (core registered `core/content-query`; the
+	 * package's in-process bookkeeping is empty, fresh-consumer style as
+	 * in test 5): the name must resolve as available and the filter must
+	 * never be consulted.
+	 */
+	public function test_consumer_filter_cannot_veto_core_provided_name(): void {
+		self::assertTrue( wp_has_ability( 'core/content-query' ), 'Precondition: the name is registry-resident (registered earlier in this boot).' );
+
+		// Fresh-consumer bookkeeping: registry-resident, not in-process.
+		$state = new ReflectionProperty( Registrar::class, 'registered' );
+		$state->setValue( null, array() );
+
+		self::reset_wrong_usage();
+
+		$captured = array();
+		$filter   = static function ( string $name, array $entry ) use ( &$captured ): bool {
+			$captured[] = array( $name, $entry );
+			return false;
+		};
+
+		self::assertTrue( Registrar::register( 'core/content-query', array( 'filter' => $filter ) ), 'A consumer filter cannot veto a name the registry already provides.' );
+		self::assertCount( 0, $captured, 'The filter is never consulted for a registry-resident name.' );
+		self::assertTrue( Registrar::is_registered( 'core/content-query' ), 'The core-provided name resolves as available (availability, not authorship).' );
+
+		self::assert_no_wrong_usage();
+	}
+
+	/**
+	 * 7. API-absence guard: _doing_it_wrong fires for both entry points and
 	 * nothing registers. Runs only when the API is genuinely absent
 	 * (CI stable run with WP_ABILITIES_TESTS_API=off; trunk always ships
 	 * the API and this test self-skips there).

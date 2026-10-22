@@ -15,9 +15,9 @@ on:
 jobs:
   phpcs:
     name: WPCS (WordPress-Core ruleset)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -30,9 +30,9 @@ jobs:
 
   phpstan:
     name: PHPStan (with phpstan-wordpress)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -45,9 +45,9 @@ jobs:
 
   verify-manifest:
     name: Verify manifest rules (bin/verify-manifest.php)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         # The version-sync rule compares Manifest::VERSION against the newest
         # git tag; the default shallow, tag-less checkout would degrade that
         # rule to its no-tags seed branch, so fetch full history.
@@ -65,9 +65,9 @@ jobs:
 
   coreify:
     name: coreify round-trip (tools/coreify.php --check)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -82,13 +82,13 @@ jobs:
 
   phpunit:
     name: "PHPUnit (wp-env: ${{ matrix.wp }})"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
         wp: [trunk, stable]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up PHP (host-side tooling)
         uses: shivammathur/setup-php@v2

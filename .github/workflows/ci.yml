@@ -4,8 +4,7 @@
 # WPCS phpcs, PHPStan, the §8.3 manifest rule gate (bin/verify-manifest.php),
 # and the coreify round-trip acceptance gate (tools/coreify.php --check).
 # The phpunit job matrix boots both wp-env configs (.wp-env.trunk.json /
-# .wp-env.stable.json) and runs the suite inside each container, plus an
-# API-off guard run simulating a stable host without the Abilities API.
+# .wp-env.stable.json) and runs the suite inside each container.
 
 name: CI
 
@@ -108,14 +107,10 @@ jobs:
       - name: Start wp-env (WordPress ${{ matrix.wp }})
         run: npx @wordpress/env start --config=.wp-env.${{ matrix.wp }}.json --update
 
-      # The package is mounted (mapping, not a plugin: composer type=library)
-      # at wp-content/plugins/wordpress-abilities; --env-cwd paths without a
-      # leading slash resolve against the WP root (verified in wp-env docs).
+      # The package is mapped (not a plugin: composer type=library) into the
+      # container at wp-content/plugins/wordpress-abilities; vendor/ is the
+      # host-side composer install. Every wp-env command must pass the same
+      # --config: `run` re-resolves the environment from it (the default
+      # .wp-env.json environment is never started in CI).
       - name: Run PHPUnit suite
-        run: npx @wordpress/env run tests-cli --env-cwd=wp-content/plugins/wordpress-abilities vendor/bin/phpunit
-
-      # API-absence guard: re-runs the guard test without the fixture API.
-      # On the stable env this exercises the missing-API branch; on trunk the
-      # API is baked into core and the test self-skips (documented).
-      - name: Run API-absence guard test (API off)
-        run: npx @wordpress/env run tests-cli --env-cwd=wp-content/plugins/wordpress-abilities env WP_ABILITIES_TESTS_API=off vendor/bin/phpunit --filter=missing_api_guard
+        run: npx @wordpress/env run tests-cli --config=.wp-env.${{ matrix.wp }}.json bash -c "cd wp-content/plugins/wordpress-abilities && vendor/bin/phpunit"

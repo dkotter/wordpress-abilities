@@ -38,6 +38,13 @@ final class Registrar {
 	private static $registered = array();
 
 	/**
+	 * Deferred single-ability registrations already queued, keyed by name.
+	 *
+	 * @var array<string, true>
+	 */
+	private static $deferred = array();
+
+	/**
 	 * Static-only class.
 	 */
 	private function __construct() {}
@@ -98,8 +105,8 @@ final class Registrar {
 	 * Registers a single manifest ability by name.
 	 *
 	 * Also timing-aware: when the API action has not fired yet, the
-	 * registration is deferred to it and false is returned for the current
-	 * call. The return value describes availability, not authorship: true
+	 * registration is deferred to it, guarded per name so repeated calls
+	 * queue it only once, and false is returned for the current call. The return value describes availability, not authorship: true
 	 * when the ability is in the registry afterwards, including when core
 	 * already provides the same name and the package copy self-skips.
 	 *
@@ -130,6 +137,11 @@ final class Registrar {
 		if ( did_action( 'wp_abilities_api_init' ) ) {
 			return self::try_register( $name, $entry, $args );
 		}
+
+		if ( isset( self::$deferred[ $name ] ) ) {
+			return false;
+		}
+		self::$deferred[ $name ] = true;
 
 		add_action(
 			'wp_abilities_api_init',

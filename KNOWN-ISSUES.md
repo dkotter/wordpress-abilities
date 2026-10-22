@@ -7,11 +7,16 @@ regression to fix silently.
 
 ## 1. Registrar deviations and gaps (post-publish fixes)
 
-- **P6 — `Registrar::register()` lacks a `$hooked` guard.** Each pre-init
-  call queues another `wp_abilities_api_init` closure that calls
-  `try_register()`. Registration itself remains idempotent (Gate 1), so the
-  observable outcome is unchanged; the duplicate closures are waste, not a
-  correctness bug. Documented as-is; fix in a follow-up.
+- **P6 — `Registrar::register()` lacks a `$hooked` guard. — RESOLVED
+  (2026-10-21).** Each pre-init call queued another
+  `wp_abilities_api_init` closure calling `try_register()`. Registration
+  itself remained idempotent (Gate 1), so the observable outcome was
+  unchanged; the duplicate closures were waste, not a correctness bug.
+  Fixed by a per-name `static $deferred` guard in `register()`, mirroring
+  `register_all()`'s `$hooked` flag — repeat pre-init calls for the same
+  name queue no second closure; different names defer independently.
+  No observable behavior change. Both suites green (57 tests, 504
+  assertions, 1 skipped on trunk and stable).
 - **P7 — Gate order deviates from spec §6.3 bullet 3:** the `class_exists`
   gate (2) and the consumer `filter` gate (3) run *before* the
   `wp_has_ability()` core-skip gate (4). Consequence: the consumer filter can

@@ -299,6 +299,13 @@ final class RegistrarTest extends TestCase {
 		self::assertFalse( Registrar::register( 'core/content-query' ), 'Pre-init registration defers: false.' );
 		self::assertFalse( Registrar::is_registered( 'core/content-query' ), 'Nothing is registered before the action fires.' );
 
+		// P6: a repeated pre-init call for the same name defers again without
+		// queueing a second closure.
+		$before = array_sum( array_map( 'count', $GLOBALS['wp_filter']['wp_abilities_api_init']->callbacks ) );
+		self::assertFalse( Registrar::register( 'core/content-query' ), 'Repeat pre-init call defers: false.' );
+		$after = array_sum( array_map( 'count', $GLOBALS['wp_filter']['wp_abilities_api_init']->callbacks ) );
+		self::assertSame( $before, $after, 'Repeat pre-init call queues no second closure (per-name dedupe).' );
+
 		self::apply_version_floor(); // Active for the deferred callbacks' first run.
 	}
 

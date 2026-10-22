@@ -15,8 +15,14 @@ The entries below describe the current prototype state._
 - Repository scaffold and tooling: Composer contract for `wordpress/abilities`
   (type `library`, zero runtime dependencies, PSR-4 `WordPress\Abilities\` →
   `src/`), WPCS and PHPStan lint configs (`composer run lint:phpcs`,
-  `composer run lint:phpstan`), a manifest verification script
-  (`composer run verify:manifest`), and a CI workflow.
+  `composer run lint:phpstan`), real manifest rule enforcement —
+  `bin/verify-manifest.php` (`composer run verify:manifest`), a CLI mirror
+  of `ManifestTest` applying the §8.3 rules (tier/prefix rules, name
+  uniqueness, rename-lineage collisions, class existence and inheritance,
+  category single-sourcing, version sync) — the coreify round-trip gate as
+  `composer run verify:coreify`, and a CI workflow wired for phpcs,
+  phpstan, the manifest rule gate, the coreify round-trip check, and the
+  dual wp-env PHPUnit matrix with the API-absence guard run.
 - Engine components under `src/`:
   - `Manifest` — the static inventory of shipped abilities (name, class,
     category, tier, version floors, required core features, rename lineage,

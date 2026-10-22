@@ -1,6 +1,8 @@
 # CI for the wordpress/abilities package.
 #
-# Static jobs run the WP0/WP1 dev tooling (PHP 8.4, matching composer.lock).
+# Static jobs run the WP0/WP1 dev tooling (PHP 8.4, matching composer.lock):
+# WPCS phpcs, PHPStan, the §8.3 manifest rule gate (bin/verify-manifest.php),
+# and the coreify round-trip acceptance gate (tools/coreify.php --check).
 # The phpunit job matrix boots both wp-env configs (.wp-env.trunk.json /
 # .wp-env.stable.json) and runs the suite inside each container, plus an
 # API-off guard run simulating a stable host without the Abilities API.
@@ -43,15 +45,44 @@ jobs:
         run: composer run lint:phpstan
 
   verify-manifest:
-    name: Verify manifest (placeholder; enforcement lives in ManifestTest)
+    name: Verify manifest rules (bin/verify-manifest.php)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify manifest
-        run: php bin/verify-manifest.php
+        # The version-sync rule compares Manifest::VERSION against the newest
+        # git tag; the default shallow, tag-less checkout would degrade that
+        # rule to its no-tags seed branch, so fetch full history.
+        with:
+          fetch-depth: 0
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-progress
+      - name: Run manifest rule gate (§8.3)
+        run: composer run verify:manifest
+
+  coreify:
+    name: coreify round-trip (tools/coreify.php --check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      # tools/coreify.php is plain PHP with no runtime deps, so no composer
+      # install is needed; the gate reads the tracked trunk fixture
+      # (tests/Fixtures/abilities-api/abilities/class-wp-abilities-content.php)
+      # and the hand-port src/Content/Content_Query.php.
+      - name: Run coreify round-trip check
+        run: composer run verify:coreify
 
   phpunit:
-    name: PHPUnit (wp-env: ${{ matrix.wp }})
+    name: "PHPUnit (wp-env: ${{ matrix.wp }})"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

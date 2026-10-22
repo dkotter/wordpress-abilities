@@ -65,10 +65,19 @@ registration under the old name are **rejected** — no exceptions, ever.
 
 - `phpcs` — core standards, text domain `default`.
 - `phpstan` — with phpstan-wordpress.
-- `verify:manifest` + `ManifestTest` — tier/prefix rules, name uniqueness,
-  class existence (`extends Abstract_Core_Ability`), `proposal` present where
-  the tier requires it, and `composer.json` version in sync with
-  `Manifest::VERSION`.
+- `verify:manifest` (the `bin/verify-manifest.php` gate) + `ManifestTest` —
+  the §8.3 manifest rules from both runtimes: tier/prefix rules, name
+  uniqueness, rename lineage (`renamed_from` collides with no live name and
+  never renames to itself), class existence (`extends
+  Abstract_Core_Ability`), category single-sourcing, and version sync
+  (`Manifest::VERSION` is the single source of truth — composer.json
+  deliberately carries no version field — and must match the newest git tag
+  when tags exist, else the `0.1.0` seed).
+- `verify:coreify` — the coreify round-trip gate (`tools/coreify.php
+  --check`): reverse of the trunk fixture followed by forward must
+  reproduce the original core file, and the reverse output must match the
+  hand-port `src/Content/Content_Query.php`, modulo whitespace and
+  comments.
 - PHPUnit on both environments — WordPress trunk (core-provided Abilities
   API) and latest stable (consumer-provided API via the test fixture), so
   core-skip and backport paths are both exercised.
@@ -80,5 +89,6 @@ composer install
 composer run lint:phpcs
 composer run lint:phpstan
 composer run verify:manifest
+composer run verify:coreify
 composer test
 ```

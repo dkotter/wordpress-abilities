@@ -22,7 +22,8 @@
         "lint:phpcs": "phpcs",
         "lint:phpstan": "phpstan analyse",
         "test": "phpunit",
-        "verify:manifest": "php bin/verify-manifest.php"
+        "verify:manifest": "php bin/verify-manifest.php",
+        "verify:coreify": "php tools/coreify.php --check"
     },
     "config": {
         "allow-plugins": {

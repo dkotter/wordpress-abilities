@@ -8,14 +8,6 @@ This file tracks open items only: an entry is removed once fixed. The
 closing commit and changelog carry the resolution; git history is the
 archive of resolved entries.
 
-## 2. Deferred tooling
-
-- **P1 — `bin/verify-manifest.php` is a placeholder enforcing nothing**:
-  CI is green regardless of manifest contents.
-- **P2 — the `coreify` round-trip check is not wired into CI**; it is a
-  local gate (`php tools/coreify.php --check`) only.
-- **P3 — the §10.4 CI job enforces nothing beyond `ManifestTest`.**
-
 ## 3. Stable-environment premise
 
 The spec assumed WP 7.1.3 (stable) shipped no Abilities API, with the test

@@ -5,7 +5,6 @@
 	"port": 8892,
 	"testsPort": 8893,
 	"mappings": {
-		"wp-content/plugins/wordpress-abilities": ".",
-		"wp-content/mu-plugins": "./tests/Fixtures/mu-plugins"
+		"wp-content/plugins/wordpress-abilities": "."
 	}
 }

@@ -1,15 +1,16 @@
 <?php
 /**
- * TEST FIXTURE — manually refreshed copy from WordPress/wordpress-develop trunk.
+ * TRUNK SNAPSHOT — manually refreshed copy from WordPress/wordpress-develop trunk.
  * Original core path (for refresh): src/wp-includes/abilities/class-wp-abilities-settings.php
  * Refreshed: 2026-10-20 by WP2 (test infrastructure).
  *
- * The latest stable WordPress does not ship the Abilities API (added in 7.2);
- * tests/Fixtures/mu-plugins/load-abilities-api.php loads these files in
- * dependency order as a stand-in for a consumer-provided API (HANDOFF §10.2).
- * Kept byte-faithful to trunk on purpose. NOT package code: never shipped,
- * never autoloaded. Excluded from WPCS/PHPStan; see phpcs.xml.dist and
- * phpstan.neon.dist.
+ * Tracked trunk reference kept in place for the planned `core/settings-get`
+ * backport (a future coreify round-trip reference; the gate currently reads
+ * the content snapshot). Only this file-level header is package-local; the
+ * code body below stays byte-faithful to trunk. Never loaded as code
+ * anymore: the Abilities API ships in WordPress core since 6.9 and the
+ * tests assume it. NOT package code: never shipped, never autoloaded.
+ * Excluded from WPCS/PHPStan; see phpcs.xml.dist and phpstan.neon.dist.
  */
 /**
  * Abilities API: WP_Abilities_Settings class.

@@ -60,9 +60,9 @@ package has no opinion.)*
 3. **Ship `vendor/` in your distribution** — don't require end-users to run
    Composer.
 
-The **Abilities API must be present at registration time**: WordPress 7.2+
-ships it in core; on older WordPress the *consumer* provides it (the way the
-MCP adapter already does). If `wp_register_ability()` is missing when you
+The **Abilities API must be present at registration time**: it ships in
+WordPress core since 6.9 (the package's support floor), so any supported
+WordPress provides it in core. If `wp_register_ability()` is missing when you
 call the Registrar, it fires a `_doing_it_wrong()` notice and registers
 nothing. Version skew is tolerated: registration is per-ability and
 idempotent, so a differently-versioned copy of the package in the process

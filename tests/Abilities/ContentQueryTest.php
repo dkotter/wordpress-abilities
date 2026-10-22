@@ -3,8 +3,8 @@
  * Tests: `core/content-query` (HANDOFF §8.1, §10.3, WP3).
  *
  * Runs under both wp-env matrix environments: trunk (7.2-dev, core registers
- * the ability itself) and stable (6.9/7.1 + fixture API, where the package
- * copy registers and executes). Tests branch on the registered copy's
+ * the ability itself) and stable (6.9/7.1: the real pre-7.2 core API, where
+ * the package copy registers and executes). Tests branch on the registered copy's
  * provenance; the fail-closed paths reflect private methods on whichever
  * copy the registry holds (core's or the package's).
  *
@@ -45,8 +45,8 @@ final class ContentQueryTest extends TestCase {
 	/**
 	 * Fires the API init action once, then runs the Registrar post-init, so
 	 * tests read a settled registry. The Registry is instantiated BEFORE
-	 * register_all() so the stable env's fixture core registration (which
-	 * sees no exposed post types) skips first and the package copy registers.
+	 * register_all() so the core-provided registrations run first and the
+	 * package copy registers.
 	 */
 	public static function set_up_before_class(): void {
 		if ( 0 === did_action( 'wp_abilities_api_init' ) ) {
@@ -216,7 +216,7 @@ final class ContentQueryTest extends TestCase {
 		$ability = $this->get_registered();
 		self::assertNotNull( $ability );
 		if ( method_exists( $ability, 'get_required_capabilities' ) ) {
-			// 7.2+ hosts (trunk core, fixture snapshot): the floor is stored and read back.
+			// 7.2+ hosts (trunk core): the floor is stored and read back.
 			self::assertSame( array(), $ability->get_required_capabilities() );
 		} else {
 			// Host API predates 7.2: assert the package copy's authored floor reflectively.

@@ -2,7 +2,7 @@
 
 /**
  * Plugin Name:       WordPress Abilities Bridge
- * Description:       Test bridge for the wordpress/abilities package: autoloads the package from a local checkout, provides the Abilities API when this WordPress lacks one, and registers every manifest ability at plugin load. Local testing only.
+ * Description:       Test bridge for the wordpress/abilities package: autoloads the package from a local checkout and registers every manifest ability at plugin load. Local testing only.
  * Version:           0.1.0
  * Requires at least:  6.9
  * Requires PHP:      7.4
@@ -23,11 +23,10 @@
  *    package's src/. Skipped when another copy of the package is already
  *    loaded (the README's "only one copy loads" rule).
  *
- * 3. Abilities API: when this WordPress does not provide one
- *    (wp_register_ability() missing), the bridge loads the package's
- *    trunk-snapshot test fixture (tests/Fixtures/abilities-api/) as the API,
- *    with the same wiring as the package's own test mu-plugin. Disable:
- *      add_filter( 'wp_abilities_bridge_provide_api', '__return_false' );
+ * 3. Abilities API: core-provided since WordPress 6.9 (this plugin's own
+ *    "Requires at least" floor). The bridge does not provide the API
+ *    itself; on a WordPress that predates the core Abilities API it
+ *    records an error and nothing registers.
  *
  * 4. Registration: Registrar::register_all() at plugin load, before
  *    anything boots the registry — so the Registrar can queue its
@@ -115,35 +114,16 @@ if (class_exists('WordPress\Abilities\Registrar')) {
 }
 
 /*
- * 3. Provide the Abilities API when this WordPress lacks one, using the
- *    package's trunk-snapshot test fixture (same require order and hook
- *    wiring as tests/Fixtures/mu-plugins/load-abilities-api.php). Core or
- *    another plugin that loaded the API first wins.
+ * 3. The Abilities API is core-provided since WordPress 6.9 (this plugin's
+ *    own "Requires at least" floor). The bridge does not provide the API
+ *    itself: an absent wp_register_ability() means this WordPress predates
+ *    the core Abilities API and nothing can register.
  */
 if (function_exists('wp_register_ability')) {
 	$wp_abilities_bridge['api_provider'] = 'WordPress core (or a plugin that loaded the API first)';
-} elseif (! apply_filters('wp_abilities_bridge_provide_api', true)) {
-	$wp_abilities_bridge['api_provider'] = 'missing (wp_abilities_bridge_provide_api is false)';
 } else {
-	$bridge_fixture_dir = $bridge_package_path . '/tests/Fixtures/abilities-api/';
-	if (! is_file($bridge_fixture_dir . 'abilities-api.php')) {
-		$wp_abilities_bridge['api_provider'] = 'missing (no test fixture at ' . $bridge_fixture_dir
-			. ') — point the bridge at the full package checkout, or provide the API another way.';
-	} else {
-		require_once $bridge_fixture_dir . 'class-wp-ability-category.php';
-		require_once $bridge_fixture_dir . 'class-wp-ability-categories-registry.php';
-		require_once $bridge_fixture_dir . 'class-wp-ability.php';
-		require_once $bridge_fixture_dir . 'class-wp-abilities-registry.php';
-		require_once $bridge_fixture_dir . 'abilities-api.php';
-		require_once $bridge_fixture_dir . 'abilities.php'; // Also loads the core ability classes and the shared category constant.
-
-		// Mirror core default-filters.php (see the package's test mu-plugin).
-		add_action('wp_abilities_api_categories_init', 'wp_register_core_ability_categories');
-		add_action('wp_abilities_api_init', '_wp_register_initial_settings_for_abilities', 1);
-		add_action('wp_abilities_api_init', 'wp_register_core_abilities');
-
-		$wp_abilities_bridge['api_provider'] = 'package test fixture (trunk snapshot)';
-	}
+	$wp_abilities_bridge['api_provider'] = 'missing';
+	$wp_abilities_bridge['error'] = 'This WordPress predates the core Abilities API (requires 6.9+) — the bridge no longer provides one.';
 }
 
 /*
@@ -181,7 +161,7 @@ function wp_abilities_bridge_init_registry()
 		// Forces the lazily-initialized registry to boot, which fires the
 		// categories and abilities init actions and runs the Registrar's
 		// deferred registrations. Function-based, so it works no matter
-		// which WordPress (or fixture) provides the API, regardless of
+		// which API source provided the API functions, regardless of
 		// internal class names.
 		wp_has_ability('core/content-query');
 	}

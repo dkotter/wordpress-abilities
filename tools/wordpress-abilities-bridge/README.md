@@ -33,11 +33,10 @@ Then activate **WordPress Abilities Bridge** in wp-admin → Plugins.
      the path must be set via the constant or filter above
 2. **Autoload** — registers a PSR-4 autoloader (`WordPress\Abilities\` →
    `<package>/src/`) unless another copy of the package is already loaded.
-3. **Abilities API** — if `wp_register_ability()` is missing on this WP
-   (pre-7.1 sites), loads the package's trunk-snapshot test fixture
-   (`tests/Fixtures/abilities-api/`) as the API, mirroring the package's own
-   test mu-plugin. On WP 7.1+/7.2+ core provides the API and this is a no-op.
-   Opt out: `add_filter( 'wp_abilities_bridge_provide_api', '__return_false' );`
+3. **Abilities API** — core-provided since WordPress 6.9 (this plugin's
+   `Requires at least` floor). The bridge does not provide the API
+   itself: on a WordPress that predates the core Abilities API it
+   records a clear error and nothing registers.
 4. **Registration** — `Registrar::register_all()` at plugin load, before
    anything boots the registry: this queues the Registrar's category
    declarations (only valid while `wp_abilities_api_categories_init`
@@ -77,9 +76,10 @@ consumer plugin as usual.
 
 ## Notes
 
-- The fixture fallback loads **test scaffolding** from the package repo
-  (explicitly not shipped package code) — never use this bridge in
-  production; it exists to make any WP version testable locally.
+- This bridge is **test scaffolding** (explicitly not shipped package
+  code) — never use it in production; it exists for local testing of the
+  package on sites running WordPress 6.9 or later (the core-provided
+  Abilities API is required; the bridge provides none).
 - This plugin lives in the package repo at `tools/wordpress-abilities-bridge/`
   (outside the gitignored `tools/out/` working area), so it is visible to git
   and can be committed and shared.

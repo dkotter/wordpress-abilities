@@ -78,9 +78,10 @@ registration under the old name are **rejected** — no exceptions, ever.
   reproduce the original core file, and the reverse output must match the
   hand-port `src/Content/Content_Query.php`, modulo whitespace and
   comments.
-- PHPUnit on both environments — WordPress trunk (core-provided Abilities
-  API) and latest stable (consumer-provided API via the test fixture), so
-  core-skip and backport paths are both exercised.
+- PHPUnit on both environments — WordPress trunk and latest stable. Both
+  ship the Abilities API in core (the 6.9+ support floor; stable pre-7.2
+  carries the real pre-7.2 API), so core-skip and backport paths are both
+  exercised against core-provided APIs on each environment.
 
 ## Local workflow
 

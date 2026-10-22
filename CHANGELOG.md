@@ -22,7 +22,7 @@ The entries below describe the current prototype state._
   category single-sourcing, version sync) — the coreify round-trip gate as
   `composer run verify:coreify`, and a CI workflow wired for phpcs,
   phpstan, the manifest rule gate, the coreify round-trip check, and the
-  dual wp-env PHPUnit matrix with the API-absence guard run.
+  dual wp-env PHPUnit matrix.
 - Engine components under `src/`:
   - `Manifest` — the static inventory of shipped abilities (name, class,
     category, tier, version floors, required core features, rename lineage,
@@ -75,9 +75,9 @@ The entries below describe the current prototype state._
   `WordPress\Abilities\Content\Abstract_Content_Write`.
 - Test infrastructure: PHPUnit suites (`ManifestTest`, `RegistrarTest`,
   per-ability tests with permission negative/positive coverage on every gate
-  path), and a dual wp-env matrix — WordPress trunk (core-provided Abilities
-  API) and latest stable (consumer-provided API loaded via a mu-plugin test
-  fixture, mirroring how consumers supply the API on WordPress < 7.2).
+  path), and a dual wp-env matrix — WordPress trunk and latest stable —
+  running against the core-provided Abilities API on both (WordPress 6.9+
+  ships it in core; a hard bootstrap guard enforces that premise).
 ### Removed
 
 - `wp/post-create` — the self-authored experimental write-ability prototype
@@ -85,3 +85,10 @@ The entries below describe the current prototype state._
   ports of existing abilities. Went away together with review finding S2
   (an unchecked null `post_status` reaching `wp_insert_post`), which is
   removed with the file rather than fixed.
+- The Abilities API fixture shim (the `tests/Fixtures/abilities-api/`
+  shim classes and the mu-plugin loader), resolving KNOWN-ISSUES §3:
+  the Abilities API ships in WordPress core since 6.9, so the tests assume
+  the core-provided API — enforced by a hard bootstrap guard — instead of
+  provisioning one. The tracked trunk snapshots under
+  `tests/Fixtures/abilities-api/abilities/` remain as the coreify
+  round-trip reference.

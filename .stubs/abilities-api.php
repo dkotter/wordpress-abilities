@@ -7,8 +7,11 @@
  * referenced from phpstan.neon.dist stubFiles, never autoloaded, never
  * shipped or listed in composer.json autoload entries.
  *
- * Signatures mirror wordpress-develop trunk as of 2026-10-20:
- * class-wp-ability.php, class-wp-abilities-registry.php, abilities-api.php.
+ * Signatures mirror the Abilities API as shipped in WordPress core since
+ * 6.9 ( wordpress-develop trunk as of 2026-10-20: WP_Ability,
+ * WP_Abilities_Registry, WP_Ability_Categories_Registry,
+ * WP_Ability_Category, and the global API functions; the former test
+ * fixture shim files these were once mirrored against are removed).
  * Once phpstan-wordpress ships Abilities API stubs, delete this file and its
  * stubFiles entry.
  *

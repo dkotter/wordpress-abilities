@@ -75,9 +75,9 @@ final class RegistrarTest extends TestCase {
 	 * backfill removed): there the Registrar's declaring hook is the only code
 	 * between the probe and the window's end, so the category being present
 	 * right after the window is provably Registrar-declared. True where the
-	 * host (or the active test fixture) itself registers `content` at a
-	 * priority before the probe — the guarded no-op is then
-	 * non-attributable by construction and the P8 assertions branch on it.
+	 * host itself registers `content` at a priority before the probe — the
+	 * guarded no-op is then non-attributable by construction and the P8
+	 * assertions branch on it.
 	 *
 	 * @var bool|null
 	 */
@@ -383,7 +383,7 @@ final class RegistrarTest extends TestCase {
 	 * 1. API present; pre-init calls defer (hooked) and return "not yet".
 	 */
 	public function test_api_present_and_pre_init_calls_defer(): void {
-		self::assertTrue( function_exists( 'wp_register_ability' ), 'Abilities API must be present (core or fixture).' );
+		self::assertTrue( function_exists( 'wp_register_ability' ), 'Abilities API must be present (WordPress core).' );
 		self::assertSame( 0, did_action( 'wp_abilities_api_init' ), 'The API init action must not have fired yet.' );
 
 		self::reset_wrong_usage();
@@ -419,7 +419,7 @@ final class RegistrarTest extends TestCase {
 		// registered by anything but the Registrar: false on host APIs whose
 		// own category registrar lacks `content` (the pre-7.2 stable env — the
 		// P8 bootstrap backfill is gone), true where the host registers it
-		// itself (trunk core categories, or the active test fixture).
+		// itself (trunk core categories).
 		add_action(
 			'wp_abilities_api_categories_init',
 			static function (): void {
@@ -632,50 +632,15 @@ final class RegistrarTest extends TestCase {
 	}
 
 	/**
-	 * 7. API-absence guard: _doing_it_wrong fires for both entry points and
-	 * nothing registers. Runs only when the API is genuinely absent
-	 * (CI stable run with WP_ABILITIES_TESTS_API=off; trunk always ships
-	 * the API and this test self-skips there).
-	 */
-	public function test_missing_api_guard(): void {
-		if ( function_exists( 'wp_register_ability' ) ) {
-			$this->markTestSkipped( 'The Abilities API is present in this environment; run via WP_ABILITIES_TESTS_API=off (CI) to exercise the guard.' );
-		}
-
-		self::reset_wrong_usage();
-
-		self::silence_notices(
-			static function (): void {
-				Registrar::register_all();
-			}
-		);
-		self::assertFalse( Registrar::register( 'core/content-query' ) );
-		self::assertFalse( Registrar::is_registered( 'core/content-query' ) );
-
-		self::assertCount( 2, self::$wrong_usage, 'Both entry points logged the missing API.' );
-		self::assertArrayHasKey( 'WordPress\Abilities\Registrar::register_all', self::$wrong_usage );
-		self::assertArrayHasKey( 'WordPress\Abilities\Registrar::register', self::$wrong_usage );
-		foreach ( self::$wrong_usage as $messages ) {
-			foreach ( $messages as $message ) {
-				self::assertStringContainsString( 'The Abilities API was not found', $message );
-				self::assertStringContainsString( 'wordpress/abilities', $message );
-			}
-		}
-		// The '6.9.0' since-version is part of the printed notice, not the
-		// doing_it_wrong_run args; it is captured by the core test suite's
-		// expected-incorrect-usage infra when available.
-	}
-
-	/**
-	 * 8. P8: the Gate-8 rejection for a missing ability category is LOUD. When
+	 * 7. P8: the Gate-8 rejection for a missing ability category is LOUD. When
 	 * `wp_register_ability()` returns null because the ability's category is
 	 * not registered, the Registrar must fire `_doing_it_wrong()` naming that
 	 * category instead of returning silently.
 	 *
 	 * Deterministic on every environment: the vehicle entry declares a
 	 * category nothing ever registers, so the registry rejects it for the
-	 * missing-category reason on 7.1.x hosts, trunk-snapshot APIs and 7.2+
-	 * alike, regardless of what the host's category registrar provides for the
+	 * missing-category reason on 7.1.x hosts and 7.2+ alike, regardless of
+	 * what the host's category registrar provides for the
 	 * manifest's own categories. The funnel is driven from inside a replayed
 	 * abilities window (open_fresh_init_window(), categories singleton left
 	 * alone so the declarations made there persist): a registration — and its
@@ -739,7 +704,7 @@ final class RegistrarTest extends TestCase {
 	}
 
 	/**
-	 * 9. P8: the consumer opt-out filter. Declaring the manifest-declared
+	 * 8. P8: the consumer opt-out filter. Declaring the manifest-declared
 	 * categories is the first behavior in which the package WRITES into the
 	 * core registry (decision D2), so a consumer must be able to decline it.
 	 * With the filter on, the Registrar must not declare the category, and —
@@ -753,7 +718,7 @@ final class RegistrarTest extends TestCase {
 	 * version sniffing:
 	 *
 	 * - Hosts whose own category registrar re-registers `content` inside the
-	 *   window (trunk core, or the active test fixture): the package's
+	 *   window (trunk core): the package's
 	 *   declaration is a guarded no-op behind the opt-out, the filter's effect
 	 *   is indistinguishable on the content slug, and the loud path cannot fire
 	 *   for a category the host provides. The host-owned state must stay
@@ -838,7 +803,7 @@ final class RegistrarTest extends TestCase {
 	}
 
 	/**
-	 * 10. P8 timing: the FIRST Registrar contact arriving during
+	 * 9. P8 timing: the FIRST Registrar contact arriving during
 	 * wp_abilities_api_init — after the categories window has already
 	 * fired — cannot queue category declarations, so the outcome is
 	 * host-dependent, per the consuming guidance in the README: where the
@@ -853,7 +818,7 @@ final class RegistrarTest extends TestCase {
 	 * window fires with no Registrar participation at all, and the
 	 * categories-hook flag is reset so only the fired action stands
 	 * between the Registrar and a declaration. The boot is restored
-	 * afterwards for the suites that follow (test 9's restore discipline).
+	 * afterwards for the suites that follow (test 8's restore discipline).
 	 */
 	public function test_first_contact_during_abilities_init_window(): void {
 		// Evict the declaring callback: this replayed categories window must
@@ -893,8 +858,8 @@ final class RegistrarTest extends TestCase {
 		self::assertArrayNotHasKey( 20, $GLOBALS['wp_filter']['wp_abilities_api_categories_init']->callbacks, 'P8: no new declaring callback was queued by the late first contact.' );
 
 		if ( wp_has_ability_category( 'content' ) ) {
-			// Host-provided category (7.2+ core, a trunk-snapshot API, or the
-			// consumer): the late first contact is safe and silent.
+			// Host-provided category (7.2+ core, or a consumer plugin): the
+			// late first contact is safe and silent.
 			self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: a late first contact registers where the host provides the manifest category.' );
 			self::assert_no_wrong_usage( 'P8: a late first contact is silent where the host provides the manifest category.' );
 		} else {
@@ -914,7 +879,7 @@ final class RegistrarTest extends TestCase {
 		 * Restore the boot for the suites that follow: the declaring
 		 * callback returns, a pre-window register_all() re-registers
 		 * everything through the deferred path, and the replayed windows
-		 * settle the registry (test 9's restore discipline).
+		 * settle the registry (test 8's restore discipline).
 		 */
 		if ( array() !== $saved_declarer ) {
 			$categories_hook_obj->callbacks[20] = $saved_declarer;

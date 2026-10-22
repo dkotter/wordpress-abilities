@@ -32,6 +32,5 @@
 	</source>
 	<php>
 		<ini name="error_reporting" value="E_ALL"/>
-		<env name="WP_ABILITIES_TESTS_API" value="auto"/>
 	</php>
 </phpunit>

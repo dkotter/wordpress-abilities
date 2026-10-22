@@ -24,9 +24,6 @@ $package_root = dirname( __DIR__ );
 require $package_root . '/vendor/autoload.php';
 require_once $package_root . '/vendor/yoast/phpunit-polyfills/phpunitpolyfills-autoload.php';
 
-// Shared test-harness definitions for fixture/backfill parity (see file docblock).
-require_once $package_root . '/tests/Fixtures/content-category.php';
-
 $_tests_dir = getenv( 'WP_TESTS_DIR' );
 if ( ! $_tests_dir || ! file_exists( $_tests_dir . '/includes/functions.php' ) ) {
 	$_tests_dir = getenv( 'WP_PHPUNIT__TESTS_DIR' );
@@ -76,6 +73,14 @@ if ( 'off' !== $_fixture_api_mode ) {
 	 * runs within. Core abilities stay unhooked on purpose: the package copies
 	 * register instead, and provenance meta tells them apart (see
 	 * ContentQueryTest).
+	 *
+	 * P8: this callback no longer carries any package-side category backfill.
+	 * The Registrar owns the manifest-declared categories — it queues its own
+	 * declaring callback on this action at priority 20 when register_all()/
+	 * register() is called (see Registrar::queue_category_declarations()).
+	 * Pre-7.2 hosts ship only `site` and `user`, so a run whose Registrar
+	 * declaring hook is not queued sees a genuinely missing `content`
+	 * category — the exact consumer scenario P8 fixes in the Registrar.
 	 */
 	// @phpstan-ignore function.notFound (core test-suite helper)
 	tests_add_filter(
@@ -88,28 +93,6 @@ if ( 'off' !== $_fixture_api_mode ) {
 			 */
 			if ( empty( $GLOBALS['wp_abilities_fixture_active'] ) && function_exists( 'wp_register_core_ability_categories' ) ) {
 				wp_register_core_ability_categories();
-			}
-
-			/*
-			 * Category backfill for host API revisions that predate trunk's
-			 * default category set: 6.9-7.1 ship only `site` and `user`, so the
-			 * `content` category (added in core 7.2, per the fixture snapshot
-			 * this shim mirrors) is missing and package registration would
-			 * fail closed with "category not registered". Definition comes
-			 * from the shared test-harness constant both this backfill and
-			 * the fixture/trunk registrar reference; the guard makes newer
-			 * hosts (and the active fixture) no-ops.
-			 */
-			if ( function_exists( 'wp_register_ability_category' ) && function_exists( 'wp_has_ability_category' ) && ! wp_has_ability_category( WP_ABILITIES_TEST_CONTENT_CATEGORY['slug'] ) ) {
-				wp_register_ability_category(
-					WP_ABILITIES_TEST_CONTENT_CATEGORY['slug'],
-					array(
-						// phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText -- text is single-sourced via the shared const.
-						'label'       => __( WP_ABILITIES_TEST_CONTENT_CATEGORY['label'] ),
-						// phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText -- text is single-sourced via the shared const.
-						'description' => __( WP_ABILITIES_TEST_CONTENT_CATEGORY['description'] ),
-					)
-				);
 			}
 		},
 		2

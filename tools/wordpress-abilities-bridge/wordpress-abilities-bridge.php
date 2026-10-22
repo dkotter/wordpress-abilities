@@ -2,7 +2,7 @@
 
 /**
  * Plugin Name:       WordPress Abilities Bridge
- * Description:       Test bridge for the wordpress/abilities package: autoloads the package from a local checkout, provides the Abilities API when this WordPress lacks one, and registers every manifest ability on wp_abilities_api_init. Local testing only.
+ * Description:       Test bridge for the wordpress/abilities package: autoloads the package from a local checkout, provides the Abilities API when this WordPress lacks one, and registers every manifest ability at plugin load. Local testing only.
  * Version:           0.1.0
  * Requires at least:  6.9
  * Requires PHP:      7.4
@@ -29,11 +29,14 @@
  *    with the same wiring as the package's own test mu-plugin. Disable:
  *      add_filter( 'wp_abilities_bridge_provide_api', '__return_false' );
  *
- * 4. Registration: Registrar::register_all() on wp_abilities_api_init at
- *    priority 20 — after core's own ability registrations at priority 10 —
- *    so abilities core already provides self-skip. The registry is also
- *    initialized eagerly on init so registration happens deterministically,
- *    regardless of who first touches the registry.
+ * 4. Registration: Registrar::register_all() at plugin load, before
+ *    anything boots the registry — so the Registrar can queue its
+ *    manifest-category declarations (only valid while
+ *    wp_abilities_api_categories_init fires) and defer the ability
+ *    registrations itself. A wp_abilities_api_init priority-20 hook
+ *    remains as the fallback for APIs provided later in the boot. The
+ *    registry is also initialized eagerly on init so registration happens
+ *    deterministically, regardless of who first touches the registry.
  *
  * 5. Status: an admin notice (manage_options) shows the resolved package
  *    path, the API provider, and which manifest abilities registered.
@@ -143,12 +146,21 @@ if (function_exists('wp_register_ability')) {
 	}
 }
 
+/*
+ * 4. Register at plugin load, before anything boots the registry: this
+ * lets the Registrar queue its category declarations (only valid while
+ * wp_abilities_api_categories_init fires) and defer the ability
+ * registrations itself. The api_init hook below is the fallback for APIs
+ * provided later in the boot.
+ */
+if (function_exists('wp_register_ability') && class_exists('WordPress\Abilities\Registrar')) {
+	WordPress\Abilities\Registrar::register_all();
+}
+
 /**
- * Registers every manifest ability the Registrar lets through.
- *
- * Priority 20: after core's own ability registrations at priority 10, so
- * abilities core already provides self-skip via the Registrar's
- * wp_has_ability() gate.
+ * Fallback registration for APIs provided after plugin load; the primary
+ * call happens at plugin load, so this is an idempotent no-op there.
+ * Priority 20 keeps it after core's own ability registrations at 10.
  */
 function wp_abilities_bridge_register_abilities()
 {
@@ -166,46 +178,15 @@ add_action('wp_abilities_api_init', 'wp_abilities_bridge_register_abilities', 20
 function wp_abilities_bridge_init_registry()
 {
 	if (function_exists('wp_has_ability')) {
-		// Forces the lazily-initialized registry to boot, which fires
-		// wp_abilities_api_init and runs all registrations — including ours
-		// at priority 20. Function-based, so it works no matter which
-		// WordPress (or fixture) provides the API, regardless of internal
-		// class names.
+		// Forces the lazily-initialized registry to boot, which fires the
+		// categories and abilities init actions and runs the Registrar's
+		// deferred registrations. Function-based, so it works no matter
+		// which WordPress (or fixture) provides the API, regardless of
+		// internal class names.
 		wp_has_ability('core/content-query');
 	}
 }
 add_action('init', 'wp_abilities_bridge_init_registry', 5);
-
-/**
- * Category backfill for host API revisions that predate core 7.2's default
- * category set: 6.9-7.1 ship only `site` and `user`, so the `content`
- * category is missing and every package ability's registration would be
- * rejected ("category not registered"). Mirrors the test harness backfill
- * in tests/bootstrap.php; the guard makes 7.2+ hosts (or the active
- * fixture) no-ops. Priority 20: after core's own category registration.
- */
-function wp_abilities_bridge_backfill_categories()
-{
-	$package_path = $GLOBALS['wp_abilities_bridge']['package_path'];
-	if (! defined('WP_ABILITIES_TEST_CONTENT_CATEGORY') && is_file($package_path . '/tests/Fixtures/content-category.php')) {
-		require_once $package_path . '/tests/Fixtures/content-category.php';
-	}
-	if (
-		defined('WP_ABILITIES_TEST_CONTENT_CATEGORY')
-		&& function_exists('wp_register_ability_category')
-		&& function_exists('wp_has_ability_category')
-		&& ! wp_has_ability_category(WP_ABILITIES_TEST_CONTENT_CATEGORY['slug'])
-	) {
-		wp_register_ability_category(
-			WP_ABILITIES_TEST_CONTENT_CATEGORY['slug'],
-			array(
-				'label'       => WP_ABILITIES_TEST_CONTENT_CATEGORY['label'],
-				'description' => WP_ABILITIES_TEST_CONTENT_CATEGORY['description'],
-			)
-		);
-	}
-}
-add_action('wp_abilities_api_categories_init', 'wp_abilities_bridge_backfill_categories', 20);
 
 /**
  * Admin status notice: what the bridge loaded and what ended up registered.

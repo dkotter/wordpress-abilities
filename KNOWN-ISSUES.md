@@ -8,26 +8,6 @@ This file tracks open items only: an entry is removed once fixed. The
 closing commit and changelog carry the resolution; git history is the
 archive of resolved entries.
 
-## 1. Registrar deviations and gaps (post-publish fixes)
-
-- **P8 — the Registrar does not ensure manifest-declared categories exist.**
-  Manifest abilities declare `category => 'content'`, which core provides
-  only from 7.2. On WP 7.1.x hosts (real pre-7.2 API; only `site` and `user`
-  categories exist), `wp_register_ability()` rejects every package
-  registration and Gate 8 returns false silently — every consumer must
-  backfill the category during `wp_abilities_api_categories_init`. The test
-  bootstrap and the `tools/wordpress-abilities-bridge` consumer plugin both
-  carry the same guarded backfill today; owning category declarations is
-  part of the package's promise, so the fix belongs in the Registrar:
-  derive required categories from the manifest, hook them at priority 20
-  from `register_all()`/`register()`, single-source the definitions in
-  `src/` (today they live in `tests/Fixtures/content-category.php`, which
-  composer does not ship), add an opt-out filter, and make the Gate 8
-  rejection loud (`_doing_it_wrong()` naming the missing category) instead
-  of silent. No-op on 7.2+ hosts and wherever a trunk-snapshot API
-  provides the full category set. Discovered in consumer testing on
-  WP 7.1.3 (premise in §3). Post-publish fix.
-
 ## 2. Deferred tooling
 
 - **P1 — `bin/verify-manifest.php` is a placeholder enforcing nothing**:

@@ -30,6 +30,28 @@ The entries below describe the current prototype state._
   - `Abstract_Core_Ability` — the core-landing-ready base class all
     abilities extend (self-contained, closures, core coding style, text
     domain `default`).
+- Ability category ownership and opt-out: the Registrar derives the ability
+  categories the manifest declares (the `category` field of every entry) and
+  registers them itself, hooked at priority 20 on
+  `wp_abilities_api_categories_init` from both `register_all()` and
+  `register()`, so a pre-7.2 WordPress (whose only ability categories are
+  `site` and `user`) accepts the package's registrations without the
+  consumer backfilling categories. The definitions are single-sourced in
+  `WordPress\Abilities\Categories` (shipped by composer autoload), replacing
+  the test-fixture constant previously used as the only definition source.
+  The declaration is a guarded no-op (`wp_has_ability_category()`) wherever
+  the host already provides the category — a 7.2+ core, a trunk-snapshot
+  consumer API, or a consumer registering its own — and consumers can
+  decline the package's declarations entirely with the
+  `wordpress_abilities_declare_categories` filter (return false to own every
+  category registration yourself).
+- Loud missing-category rejection: when `wp_register_ability()` returns null
+  for an ability whose manifested category is not registered — e.g. after
+  opting out of the package's declarations, or when
+  `wp_abilities_api_categories_init` has already fired without declaring the
+  category — the Registrar now fires `_doing_it_wrong()` naming the missing
+  category, instead of returning silently. All other Gate-8 rejections stay
+  silent (core logs its own reason).
 - Initial abilities:
   - `core/content-query` — tier `core`: backport of the readonly content
     query ability as landed in WordPress core 7.2 (`core_since: 7.2`). Served

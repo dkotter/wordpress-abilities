@@ -11,7 +11,13 @@
  * entry through the engine's own registration funnel. Its `test/` prefix
  * can never collide with real manifest growth (`core/` or `wp/` entries).
  *
- * @package WordPress\Abilities
+ * P8 adds category ownership to the same sequencing: the Registrar must
+ * declare the manifest-declared categories itself, at priority 20 on
+ * `wp_abilities_api_categories_init` (after core's own category registrar),
+ * and the test bootstrap's package-side backfill is gone, so the pre-7.2
+ * stable env boots with `content` genuinely missing until the Registrar
+ * declares it. The opt-out filter is observed through a deliberately reopened
+ * categories window; see the P8 tests at the end of this class.
  */
 
 declare( strict_types = 1 );
@@ -24,6 +30,7 @@ use WordPress\Abilities\Abstract_Core_Ability;
 use WordPress\Abilities\Manifest;
 use WordPress\Abilities\Registrar;
 use WP_Abilities_Registry;
+use WP_Ability_Categories_Registry;
 use Yoast\PHPUnitPolyfills\TestCases\TestCase;
 
 /**
@@ -56,6 +63,34 @@ final class RegistrarTest extends TestCase {
 	 * @var bool|null
 	 */
 	private static ?bool $synthetic_window_result = null;
+
+	/**
+	 * What the categories probe recorded on `wp_abilities_api_categories_init`
+	 * at priority 10 — after the restored core category registrar (priority 2,
+	 * queued by the test bootstrap) and before the Registrar's declaring
+	 * callback (priority 20, queued by the P8 contract).
+	 *
+	 * False on host APIs whose own category registrar lacks the manifest
+	 * `content` category (the pre-7.2 stable env, with the P8 bootstrap
+	 * backfill removed): there the Registrar's declaring hook is the only code
+	 * between the probe and the window's end, so the category being present
+	 * right after the window is provably Registrar-declared. True where the
+	 * host (or the active test fixture) itself registers `content` at a
+	 * priority before the probe — the guarded no-op is then
+	 * non-attributable by construction and the P8 assertions branch on it.
+	 *
+	 * @var bool|null
+	 */
+	private static ?bool $content_before_declaring_priority = null;
+
+	/**
+	 * Result of the P8 loud-rejection vehicle's registration inside its
+	 * replayed window (null until the window has run); see
+	 * test_missing_category_rejection_is_loud().
+	 *
+	 * @var bool|null
+	 */
+	private static ?bool $missing_category_window_result = null;
 
 	/**
 	 * Starts recording _doing_it_wrong() traffic for the whole class.
@@ -98,9 +133,11 @@ final class RegistrarTest extends TestCase {
 
 	/**
 	 * Asserts no unexpected _doing_it_wrong() occurred since reset.
+	 *
+	 * @param string $message Optional context for the failure report.
 	 */
-	private function assert_no_wrong_usage(): void {
-		self::assertSame( array(), self::$wrong_usage, 'Unexpected _doing_it_wrong() traffic.' );
+	private function assert_no_wrong_usage( string $message = 'Unexpected _doing_it_wrong() traffic.' ): void {
+		self::assertSame( array(), self::$wrong_usage, $message );
 	}
 
 	/**
@@ -149,6 +186,27 @@ final class RegistrarTest extends TestCase {
 		$instance->setValue( null, null );
 
 		$GLOBALS['wp_actions']['wp_abilities_api_init'] = 0;
+	}
+
+	/**
+	 * Reopens a fresh wp_abilities_api_categories_init window.
+	 *
+	 * The P8 counterpart of open_fresh_init_window(): tests that must observe
+	 * the Registrar's category-declaration decision INSIDE the categories
+	 * action (the opt-out filter) replay a pre-categories-init boot by
+	 * resetting the categories registry singleton — one of the deliberate
+	 * exceptions to the persistence rule open_fresh_init_window() documents —
+	 * together with the fired-action counter. The restored core category
+	 * registrar (priority 2) and the Registrar's queued declaring callback
+	 * (priority 20) survive the reset and re-run once a categories function is
+	 * called again; the tests that reopen the window re-establish a settled
+	 * registry with the category declared before returning.
+	 */
+	private static function open_fresh_categories_window(): void {
+		$instance = new ReflectionProperty( WP_Ability_Categories_Registry::class, 'instance' );
+		$instance->setValue( null, null );
+
+		$GLOBALS['wp_actions']['wp_abilities_api_categories_init'] = 0;
 	}
 
 	/**
@@ -270,6 +328,27 @@ final class RegistrarTest extends TestCase {
 	}
 
 	/**
+	 * Builds a synthetic entry variant whose category is one that nothing in
+	 * this process registers: the deterministic, window-free vehicle for the
+	 * loud Gate-8 missing-category rejection, valid on every environment.
+	 *
+	 * The name also differs from SYNTHETIC_NAME, so gate 1 (in-process
+	 * idempotence) and gate 2 (the primary synthetic's registry residency)
+	 * cannot pre-resolve it. The registry rejects a missing category before
+	 * instantiating the ability class, so the class's constructor name-match
+	 * notice never fires for the name/category pair.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function synthetic_entry_with_missing_category(): array {
+		$entry             = self::synthetic_entry();
+		$entry['name']     = 'test/registrar-missing-category';
+		$entry['category'] = 'test-registrar-missing-category';
+
+		return $entry;
+	}
+
+	/**
 	 * Drives the synthetic entry through the engine's own registration
 	 * funnel — the same private Registrar::try_register() every public entry
 	 * point calls — so the gate chain runs exactly as it would for a real
@@ -279,9 +358,25 @@ final class RegistrarTest extends TestCase {
 	 * @return bool The try_register() result.
 	 */
 	private static function try_register_synthetic( array $args = array() ): bool {
+		return self::try_register_entry( self::SYNTHETIC_NAME, self::synthetic_entry(), $args );
+	}
+
+	/**
+	 * Drives any manifest-shaped entry through the engine's own registration
+	 * funnel, as try_register_synthetic() does for the primary vehicle. Used
+	 * by the P8 tests for a vehicle whose entry differs from the synthetic's
+	 * (a category nothing registers) without disturbing the primary vehicle's
+	 * in-process bookkeeping.
+	 *
+	 * @param string               $name  The registration name for the entry.
+	 * @param array<string, mixed> $entry The manifest-shaped entry.
+	 * @param array<string, mixed> $args  Consumer-side selection policy.
+	 * @return bool The try_register() result.
+	 */
+	private static function try_register_entry( string $name, array $entry, array $args = array() ): bool {
 		$method = new ReflectionMethod( Registrar::class, 'try_register' );
 		$method->setAccessible( true ); // No-op on PHP 8.1+, required on 7.4.
-		return (bool) $method->invoke( null, self::SYNTHETIC_NAME, self::synthetic_entry(), $args );
+		return (bool) $method->invoke( null, $name, $entry, $args );
 	}
 
 	/**
@@ -306,6 +401,33 @@ final class RegistrarTest extends TestCase {
 		$after = array_sum( array_map( 'count', $GLOBALS['wp_filter']['wp_abilities_api_init']->callbacks ) );
 		self::assertSame( $before, $after, 'Repeat pre-init call queues no second closure (per-name dedupe).' );
 
+		// P8: the Registrar owns the manifest-declared ability categories. The
+		// pre-init calls must have queued the declaring callback at priority
+		// 20 on the categories action — the same hook the restored core
+		// category registrar (test bootstrap, priority 2) runs on — before
+		// that action can ever fire, because wp_register_ability_category() is
+		// only valid while doing_action( 'wp_abilities_api_categories_init' ).
+		self::assertSame( 0, did_action( 'wp_abilities_api_categories_init' ), 'The categories action must not have fired yet either.' );
+		self::assertTrue(
+			array_key_exists( 20, $GLOBALS['wp_filter']['wp_abilities_api_categories_init']->callbacks ),
+			'P8: the Registrar queues a category declaring callback at priority 20 on wp_abilities_api_categories_init.'
+		);
+
+		// P8: probe the categories window between the core category registrar
+		// (priority 2, restored by the bootstrap) and the Registrar's declaring
+		// priority (20), recording whether the manifest `content` category is
+		// registered by anything but the Registrar: false on host APIs whose
+		// own category registrar lacks `content` (the pre-7.2 stable env — the
+		// P8 bootstrap backfill is gone), true where the host registers it
+		// itself (trunk core categories, or the active test fixture).
+		add_action(
+			'wp_abilities_api_categories_init',
+			static function (): void {
+				self::$content_before_declaring_priority = function_exists( 'wp_has_ability_category' ) && wp_has_ability_category( 'content' );
+			},
+			10
+		);
+
 		self::apply_version_floor(); // Active for the deferred callbacks' first run.
 	}
 
@@ -317,6 +439,24 @@ final class RegistrarTest extends TestCase {
 	public function test_init_fires_and_min_wp_version_blocks(): void {
 		WP_Abilities_Registry::get_instance(); // Fires wp_abilities_api_init (lazy).
 		self::assertSame( 1, did_action( 'wp_abilities_api_init' ) );
+
+		// P8: the first categories window has just fired as part of the same
+		// registry boot (the abilities registry boots the categories registry
+		// first). The Registrar's queued declaring callback must have produced
+		// the manifest-declared category: where the host does not already
+		// provide it (the pre-7.2 stable env, with the test bootstrap's
+		// package-side backfill removed) the Registrar is the only source, and
+		// where the host provides it the guarded no-op kept the declaration a
+		// silent no-op. Either way the category must be present, and must
+		// carry the package's single-sourced definition.
+		self::assertTrue( wp_has_ability_category( 'content' ), 'P8: the manifest `content` category must be registered once the first categories window has fired (Registrar-owned).' );
+		self::assertNotNull( self::$content_before_declaring_priority, 'P8: the categories probe ran inside the window.' );
+		if ( function_exists( 'wp_get_ability_category' ) ) {
+			$declared = wp_get_ability_category( 'content' );
+			self::assertNotNull( $declared, 'P8: the manifest category is retrievable.' );
+			self::assertSame( 'Content', $declared->get_label(), 'P8: the declaration carries the package single-sourced label.' );
+			self::assertSame( 'Abilities that retrieve or manage posts and other content.', $declared->get_description(), 'P8: the declaration carries the package single-sourced description.' );
+		}
 
 		/*
 		 * Floor gate via the synthetic entry: unambiguous on both envs. The
@@ -524,5 +664,289 @@ final class RegistrarTest extends TestCase {
 		// The '6.9.0' since-version is part of the printed notice, not the
 		// doing_it_wrong_run args; it is captured by the core test suite's
 		// expected-incorrect-usage infra when available.
+	}
+
+	/**
+	 * 8. P8: the Gate-8 rejection for a missing ability category is LOUD. When
+	 * `wp_register_ability()` returns null because the ability's category is
+	 * not registered, the Registrar must fire `_doing_it_wrong()` naming that
+	 * category instead of returning silently.
+	 *
+	 * Deterministic on every environment: the vehicle entry declares a
+	 * category nothing ever registers, so the registry rejects it for the
+	 * missing-category reason on 7.1.x hosts, trunk-snapshot APIs and 7.2+
+	 * alike, regardless of what the host's category registrar provides for the
+	 * manifest's own categories. The funnel is driven from inside a replayed
+	 * abilities window (open_fresh_init_window(), categories singleton left
+	 * alone so the declarations made there persist): a registration — and its
+	 * Gate-8 rejection — only happens while wp_abilities_api_init is firing.
+	 */
+	public function test_missing_category_rejection_is_loud(): void {
+		self::reset_wrong_usage();
+		self::open_fresh_init_window();
+
+		$vehicle_hook = static function (): void {
+			self::$missing_category_window_result = self::try_register_entry(
+				'test/registrar-missing-category',
+				self::synthetic_entry_with_missing_category()
+			);
+		};
+		add_action( 'wp_abilities_api_init', $vehicle_hook );
+
+		// Fires the replayed window; the registry's category rejection and the
+		// Registrar's Gate-8 notice both run within it and are recorded.
+		self::silence_notices(
+			static function (): void {
+				WP_Abilities_Registry::get_instance();
+			}
+		);
+
+		self::assertFalse( self::$missing_category_window_result, 'P8: the entry whose category is missing did not register.' );
+
+		// Unhook the vehicle so the windows this test leaves reopened for the
+		// following suites (see the P8 opt-out test) never announce its
+		// rejection again; its result has already been consumed above.
+		remove_action( 'wp_abilities_api_init', $vehicle_hook );
+
+		// Precondition: the registry itself rejected the registration for the
+		// missing category (its own notice names the slug), so the null the
+		// Registrar received IS the missing-category case, not another
+		// rejection the package must stay quiet about.
+		self::assertArrayHasKey( 'WP_Abilities_Registry::register', self::$wrong_usage, 'P8 precondition: the registry rejected the entry for the missing category.' );
+
+		$messages = self::$wrong_usage['WordPress\Abilities\Registrar::try_register'] ?? array();
+		self::assertNotEmpty(
+			$messages,
+			'P8: a Gate-8 rejection whose reason is the missing category must fire _doing_it_wrong() instead of returning silently.'
+		);
+
+		$named = null;
+		foreach ( $messages as $message ) {
+			if ( strpos( $message, 'test-registrar-missing-category' ) !== false ) {
+				$named = $message;
+				break;
+			}
+		}
+		self::assertNotNull( $named, 'P8: the loud Gate-8 notice must name the missing category.' );
+
+		// The rest of the replayed window must have stayed quiet: the manifest
+		// category and the other registrations resolve without wrong-usage
+		// traffic on every environment.
+		self::assertTrue( wp_has_ability_category( 'content' ), 'P8: the manifest category is registered after the replayed window.' );
+		self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: the manifest abilities register in the replayed window.' );
+		self::reset_wrong_usage();
+		self::assert_no_wrong_usage();
+	}
+
+	/**
+	 * 9. P8: the consumer opt-out filter. Declaring the manifest-declared
+	 * categories is the first behavior in which the package WRITES into the
+	 * core registry (decision D2), so a consumer must be able to decline it.
+	 * With the filter on, the Registrar must not declare the category, and —
+	 * where nothing else registers it — the resulting Gate-8 rejections must
+	 * be loud, naming the missing category.
+	 *
+	 * Runs through deliberately replayed windows (open_fresh_categories_window()
+	 * resets the categories registry singleton, unlike the persistence rule
+	 * open_fresh_init_window() documents; that is the point of this test) and
+	 * branches on the OBSERVED post-window category state rather than on
+	 * version sniffing:
+	 *
+	 * - Hosts whose own category registrar re-registers `content` inside the
+	 *   window (trunk core, or the active test fixture): the package's
+	 *   declaration is a guarded no-op behind the opt-out, the filter's effect
+	 *   is indistinguishable on the content slug, and the loud path cannot fire
+	 *   for a category the host provides. The host-owned state must stay
+	 *   settled and silent.
+	 * - Hosts whose category registrar lacks `content` (WP 7.1.x stable, with
+	 * the P8 bootstrap backfill removed): the Registrar's declaration was the
+	 * only would-be source, so with the filter on the category must stay
+	 * absent and every Gate-8 rejection must name it; removing the filter in
+	 * a following window must restore the Registrar-owned declaration and a
+	 * settled registry for the suites that read this boot afterwards.
+	 */
+	public function test_opt_out_filter_declines_registrar_category_declarations(): void {
+		add_filter( 'wordpress_abilities_declare_categories', '__return_false' );
+
+		self::open_fresh_categories_window();
+		self::open_fresh_init_window();
+		self::reset_wrong_usage();
+
+		Registrar::register_all(); // Re-queues the abilities hook for the replayed windows; the declaring hook is already queued and consults the filter at run time.
+
+		self::silence_notices(
+			static function (): void {
+				WP_Abilities_Registry::get_instance(); // Fires the replayed categories window, then the replayed abilities window.
+			}
+		);
+
+		if ( wp_has_ability_category( 'content' ) ) {
+			// Host-owned category source (see above): the content slug cannot
+			// witness the opt-out; assert the settled, silent state instead.
+			remove_filter( 'wordpress_abilities_declare_categories', '__return_false' );
+			self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: manifest abilities register where the host registers the category itself.' );
+			self::assert_no_wrong_usage( 'P8: the opted-out declaration is silent on a host whose own registrar provides the category.' );
+		} else {
+			self::assertFalse( wp_has_ability_category( 'content' ), 'P8: with the opt-out filter on, the Registrar must not declare the manifest category.' );
+
+			$messages = self::$wrong_usage['WordPress\Abilities\Registrar::try_register'] ?? array();
+			self::assertNotEmpty(
+				$messages,
+				'P8: with the opt-out filter the manifest abilities are Gate-8 rejected; the rejection must be loud, not silent.'
+			);
+			$named = null;
+			foreach ( $messages as $message ) {
+				if ( strpos( $message, 'content' ) !== false ) {
+					$named = $message;
+					break;
+				}
+			}
+			self::assertNotNull( $named, 'P8: the loud Gate-8 notices must name the missing manifest category.' );
+
+			// Restore the boot for the suites that read it after this class:
+			// remove the opt-out, replay both windows, let the Registrar declare.
+			remove_filter( 'wordpress_abilities_declare_categories', '__return_false' );
+			self::reset_wrong_usage();
+			self::open_fresh_categories_window();
+			self::open_fresh_init_window();
+
+			Registrar::register_all();
+			WP_Abilities_Registry::get_instance();
+
+			self::assertTrue( wp_has_ability_category( 'content' ), 'P8: restored — the Registrar declares the manifest category again once the filter is removed.' );
+			self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: restored — the manifest abilities register again for the following suites.' );
+
+			// The restored boot must have registered quietly from the Registrar's
+			// side: no Gate-8 rejection, no category complaints. The host API's
+			// own constructor notices for the re-instantiated abilities are
+			// tolerated pre-existing host noise (the pre-7.2 WP_Ability does not
+			// accept the core-landing-ready `required_capabilities` argument;
+			// trunk's does).
+			$registrar_traffic = array_intersect_key(
+				self::$wrong_usage,
+				array_fill_keys(
+					array(
+						'WordPress\Abilities\Registrar::register_all',
+						'WordPress\Abilities\Registrar::register',
+						'WordPress\Abilities\Registrar::try_register',
+					),
+					true
+				)
+			);
+			self::assertSame( array(), $registrar_traffic, 'P8: the restored boot registers without any Registrar wrong-usage traffic.' );
+		}
+	}
+
+	/**
+	 * 10. P8 timing: the FIRST Registrar contact arriving during
+	 * wp_abilities_api_init — after the categories window has already
+	 * fired — cannot queue category declarations, so the outcome is
+	 * host-dependent, per the consuming guidance in the README: where the
+	 * host provides the manifest categories, late registration is safe and
+	 * silent; where it does not (pre-7.2 host APIs), nothing can register
+	 * and every Gate-8 rejection must be loud, naming the category.
+	 *
+	 * Simulates the consumer pattern that cannot work on category-less
+	 * hosts (registering from a wp_abilities_api_init callback): the
+	 * queued declaring callback is evicted for one replayed categories
+	 * window — priority 20 is the Registrar's alone on that action — so the
+	 * window fires with no Registrar participation at all, and the
+	 * categories-hook flag is reset so only the fired action stands
+	 * between the Registrar and a declaration. The boot is restored
+	 * afterwards for the suites that follow (test 9's restore discipline).
+	 */
+	public function test_first_contact_during_abilities_init_window(): void {
+		// Evict the declaring callback: this replayed categories window must
+		// fire as if the process had never contacted the Registrar pre-boot.
+		$categories_hook_obj = $GLOBALS['wp_filter']['wp_abilities_api_categories_init'];
+		$saved_declarer      = $categories_hook_obj->callbacks[20] ?? array();
+		unset( $categories_hook_obj->callbacks[20] );
+
+		// Fresh-consumer Registrar state: nothing registered, nothing queued;
+		// the fired categories action alone must prevent a new declaration.
+		$registered_state = new ReflectionProperty( Registrar::class, 'registered' );
+		$registered_state->setValue( null, array() );
+		$categories_hooked_state = new ReflectionProperty( Registrar::class, 'categories_hooked' );
+		$categories_hooked_state->setValue( null, false );
+
+		self::open_fresh_categories_window();
+		self::open_fresh_init_window();
+		self::reset_wrong_usage();
+
+		// The late first contact: a consumer registering from inside the
+		// abilities window.
+		$late_contact = static function (): void {
+			Registrar::register_all();
+		};
+		add_action( 'wp_abilities_api_init', $late_contact, 25 );
+
+		self::silence_notices(
+			static function (): void {
+				WP_Abilities_Registry::get_instance(); // Replays the categories window (no Registrar participation), then the abilities window with the late first contact.
+			}
+		);
+
+		remove_action( 'wp_abilities_api_init', $late_contact, 25 );
+
+		// The timing no-op, on every environment: a declaration cannot queue
+		// once the categories action fired, and none did.
+		self::assertArrayNotHasKey( 20, $GLOBALS['wp_filter']['wp_abilities_api_categories_init']->callbacks, 'P8: no new declaring callback was queued by the late first contact.' );
+
+		if ( wp_has_ability_category( 'content' ) ) {
+			// Host-provided category (7.2+ core, a trunk-snapshot API, or the
+			// consumer): the late first contact is safe and silent.
+			self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: a late first contact registers where the host provides the manifest category.' );
+			self::assert_no_wrong_usage( 'P8: a late first contact is silent where the host provides the manifest category.' );
+		} else {
+			// Category-less host (pre-7.2): nothing registered, and every
+			// rejection named the category loudly.
+			self::assertFalse( wp_has_ability_category( 'content' ), 'P8 precondition: the manifest category is genuinely absent on this host.' );
+			self::assertFalse( wp_has_ability( 'core/content-create' ), 'P8: nothing registers when the first contact is late on a category-less host.' );
+
+			$messages = self::$wrong_usage['WordPress\Abilities\Registrar::try_register'] ?? array();
+			self::assertNotEmpty( $messages, 'P8: the late first contact on a category-less host is Gate-8 rejected loudly, not silently.' );
+			foreach ( $messages as $message ) {
+				self::assertStringContainsString( 'content', $message, 'P8: each loud rejection names the missing manifest category.' );
+			}
+		}
+
+		/*
+		 * Restore the boot for the suites that follow: the declaring
+		 * callback returns, a pre-window register_all() re-registers
+		 * everything through the deferred path, and the replayed windows
+		 * settle the registry (test 9's restore discipline).
+		 */
+		if ( array() !== $saved_declarer ) {
+			$categories_hook_obj->callbacks[20] = $saved_declarer;
+		}
+		$categories_hooked_state->setValue( null, true );
+
+		self::open_fresh_categories_window();
+		self::open_fresh_init_window();
+		self::reset_wrong_usage();
+
+		Registrar::register_all(); // Pre-window: defers; the restored declarer declares in the replayed categories window.
+		self::silence_notices(
+			static function (): void {
+				WP_Abilities_Registry::get_instance();
+			}
+		);
+
+		self::assertTrue( wp_has_ability_category( 'content' ), 'P8: restored — the Registrar declares the manifest category again.' );
+		self::assertTrue( wp_has_ability( 'core/content-create' ), 'P8: restored — the manifest abilities register again for the following suites.' );
+
+		$registrar_traffic = array_intersect_key(
+			self::$wrong_usage,
+			array_fill_keys(
+				array(
+					'WordPress\Abilities\Registrar::register_all',
+					'WordPress\Abilities\Registrar::register',
+					'WordPress\Abilities\Registrar::try_register',
+				),
+				true
+			)
+		);
+		self::assertSame( array(), $registrar_traffic, 'P8: the restored boot registers without any Registrar wrong-usage traffic.' );
+		self::reset_wrong_usage();
 	}
 }

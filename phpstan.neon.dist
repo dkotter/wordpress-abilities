@@ -12,10 +12,3 @@ parameters:
 	stubFiles:
 		# Abilities API symbols (new in core trunk, not yet in phpstan-wordpress).
 		- .stubs/abilities-api.php
-	bootstrapFiles:
-		# Runtime-defined placeholder classes for the abilities that land in WP3/WP4.
-		# Loaded by PHPStan itself (dev tooling, never composer-autoloaded); remove
-		# this entry together with the file when the real classes land.
-		# Shared test-harness const consumed by tests/bootstrap.php (its definition
-		# file sits in tests/Fixtures, excluded from analysis above).
-		- tests/Fixtures/content-category.php

@@ -7,11 +7,13 @@
  * The latest stable WordPress does not ship the Abilities API (added in 7.2);
  * tests/Fixtures/mu-plugins/load-abilities-api.php loads these files in
  * dependency order as a stand-in for a consumer-provided API (HANDOFF §10.2).
- * Kept byte-faithful to trunk on purpose, with one wiring exception: the
- * `content` category registration reads the shared
- * WP_ABILITIES_TEST_CONTENT_CATEGORY constant (tests/Fixtures/content-category.php,
- * single source shared with tests/bootstrap.php); a trunk refresh should
- * re-apply that one reference. NOT package code: never shipped,
+ * This file (its categories included) is byte-faithful to trunk again as of
+ * P8: the WP_ABILITIES_TEST_CONTENT_CATEGORY fixture constant is gone, the
+ * `content` category definition is single-sourced in the shipped
+ * WordPress\Abilities\Categories (src/Categories.php), and the Registrar
+ * declares the category itself on host APIs that lack it. When a trunk
+ * refresh changes the `content` strings, mirror the change into
+ * Categories::definition() too. NOT package code: never shipped,
  * never autoloaded. Excluded from WPCS/PHPStan; see phpcs.xml.dist and
  * phpstan.neon.dist.
  */
@@ -28,7 +30,6 @@ declare( strict_types = 1 );
 require_once __DIR__ . '/abilities/class-wp-abilities-content.php';
 require_once __DIR__ . '/abilities/class-wp-abilities-settings.php';
 require_once __DIR__ . '/abilities/class-wp-abilities-users.php';
-require_once dirname( __DIR__ ) . '/content-category.php';
 
 /**
  * Registers the core ability categories.
@@ -54,10 +55,10 @@ function wp_register_core_ability_categories(): void {
 	);
 
 	wp_register_ability_category(
-		WP_ABILITIES_TEST_CONTENT_CATEGORY['slug'],
+		'content',
 		array(
-			'label'       => __( WP_ABILITIES_TEST_CONTENT_CATEGORY['label'] ),
-			'description' => __( WP_ABILITIES_TEST_CONTENT_CATEGORY['description'] ),
+			'label'       => __( 'Content' ),
+			'description' => __( 'Abilities that retrieve or manage posts and other content.' ),
 		)
 	);
 

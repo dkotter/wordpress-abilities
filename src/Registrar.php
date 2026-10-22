@@ -20,6 +20,17 @@ use WordPress\Abilities\Support\Features;
  * for multiple consumers, or a stale bundle copy, to call it again: another
  * consumer's autoloader may have loaded a newer copy than the caller's, so
  * nothing here assumes exact-package-version equality.
+ *
+ * The one thing the Registrar writes into the core registry besides the
+ * manifest abilities are the categories the manifest declares: it registers
+ * the `category` of every manifest entry itself (on the categories init
+ * action, {@see queue_category_declarations()}), so a pre-7.2 host API —
+ * whose only ability categories are `site` and `user` — can accept the
+ * package's registrations without the consumer backfilling categories first.
+ * That declaration is a guarded no-op wherever the host already provides the
+ * category (7.2+ core, a trunk-snapshot API, or the consumer itself), and a
+ * consumer filter can decline the package's declarations entirely:
+ * {@see CATEGORIES_FILTER}.
  */
 final class Registrar {
 
@@ -29,6 +40,25 @@ final class Registrar {
 	 * @var bool
 	 */
 	private static $hooked = false;
+
+	/**
+	 * Whether the category declaring hook was already queued.
+	 *
+	 * @var bool
+	 */
+	private static $categories_hooked = false;
+
+	/**
+	 * Opt-out filter for the Registrar's category declarations.
+	 *
+	 * Applies to the package's declaration of the categories the manifest
+	 * requires, in full: returning false means the consumer owns every
+	 * category registration itself (core's default categories included), and
+	 * the Registrar never calls wp_register_ability_category(). The filter is
+	 * consulted when the declaring hook runs, so it may be toggled at any
+	 * point before the categories action fires.
+	 */
+	private const CATEGORIES_FILTER = 'wordpress_abilities_declare_categories';
 
 	/**
 	 * Abilities this process has registered, keyed by name.
@@ -56,6 +86,17 @@ final class Registrar {
 	 * the action has fired, registration happens immediately; otherwise it
 	 * is deferred to the action, guarded by a static flag so repeated calls
 	 * queue it only once. Double-consumption by two host plugins is safe.
+	 *
+	 * Also queues the Registrar-owned declarations of the manifest-declared
+	 * ability categories at priority 20 on `wp_abilities_api_categories_init`
+	 * (after core's own category registrar): the categories must be present
+	 * before the abilities register, or Gate 8 rejects them. See
+	 * queue_category_declarations() for the timing and the opt-out filter.
+	 *
+	 * On hosts whose API does not provide the manifest categories
+	 * (WordPress < 7.2), that also means the first call must precede the
+	 * registry boot: categories can only be declared while the categories
+	 * action fires, which happens before `wp_abilities_api_init`.
 	 *
 	 * @param array<string, mixed> $args {
 	 *     Optional. Consumer-side selection policy.
@@ -85,6 +126,11 @@ final class Registrar {
 			return;
 		}
 
+		// P8: also queue the manifest-category declarations; see the method's
+		// docblock for the both-timings contract (this call is a no-op once the
+		// categories window has fired).
+		self::queue_category_declarations();
+
 		if ( did_action( 'wp_abilities_api_init' ) ) {
 			self::register_eligible( $args );
 			return;
@@ -105,6 +151,10 @@ final class Registrar {
 
 	/**
 	 * Registers a single manifest ability by name.
+	 *
+	 * Also queues the Registrar-owned category declarations for the manifest
+	 * (see register_all()), so a single-ability consumer still gets the
+	 * category its ability needs.
 	 *
 	 * Also timing-aware: when the API action has not fired yet, the
 	 * registration is deferred to it, guarded per name so repeated calls
@@ -135,6 +185,11 @@ final class Registrar {
 		if ( null === $entry ) {
 			return false;
 		}
+
+		// P8: a manifest ability may be registered on its own, so the
+		// categories it needs must be declared from this entry point too. This
+		// call is a no-op once the categories window has fired.
+		self::queue_category_declarations();
 
 		if ( did_action( 'wp_abilities_api_init' ) ) {
 			return self::try_register( $name, $entry, $args );
@@ -189,10 +244,124 @@ final class Registrar {
 	}
 
 	/**
+	 * Queues the Registrar-owned declarations of the manifest-declared ability
+	 * categories.
+	 *
+	 * Category declarations are only valid while
+	 * doing_action( 'wp_abilities_api_categories_init' ) fires (core's
+	 * wp_register_ability_category() says so), and the action fires exactly
+	 * once per boot — when the categories registry singleton is first created,
+	 * which the abilities registry does first on its own boot, before the
+	 * abilities themselves register. So:
+	 *
+	 * - Called before the categories action fired (the pre-init path both
+	 *   entry points take): a callback is hooked at priority 20 — after
+	 *   core's own category registration — and declares the manifest
+	 *   categories when the action later fires, before the deferred ability
+	 *   registrations of the same registry boot run.
+	 * - Called after it fired: the declaration is impossible — nothing can be
+	 *   registered outside that action — so this is a no-op. Registration
+	 *   continues, and Gate 8 makes any resulting missing-category rejection
+	 *   loud instead ({@see try_register()}).
+	 *
+	 * The static flag dedupes the queue per process (mirroring $hooked for
+	 * the abilities side); repeated declarations — from multiple consumers,
+	 * multiple package copies, or test-harness windows fired again — are kept
+	 * idempotent by the declaring callback's own `wp_has_ability_category()`
+	 * guarded no-ops, not by this flag.
+	 *
+	 * @return void
+	 */
+	private static function queue_category_declarations(): void {
+		if ( self::$categories_hooked || did_action( 'wp_abilities_api_categories_init' ) ) {
+			return;
+		}
+
+		self::$categories_hooked = true;
+
+		add_action(
+			'wp_abilities_api_categories_init',
+			static function (): void {
+				self::declare_categories();
+			},
+			20
+		);
+	}
+
+	/**
+	 * Declares the manifest-declared ability categories.
+	 *
+	 * Runs only from the priority-20 callback queued by
+	 * queue_category_declarations(), i.e. while the
+	 * `wp_abilities_api_categories_init` action fires. For every slug the
+	 * manifest requires ({@see Categories::required_slugs()}):
+	 *
+	 * - The `wp_has_ability_category()` guard means anything that already
+	 *   registered the category wins — a 7.2+ host, a trunk-snapshot
+	 *   consumer API, the consumer itself, or a second package copy — and
+	 *   repeated declarations are silent no-ops rather than the registry's
+	 *   already-registered doing-it-wrong.
+	 * - A slug with no package definition ({@see Categories::definition()})
+	 *   cannot be declared; abilities in it are then rejected loudly at Gate
+	 *   8 instead, and ManifestTest pins the manifest/Categories consistency
+	 *   at manifest-rule level.
+	 * - The opt-out filter (CATEGORIES_FILTER) declines the whole
+	 *   declaration, giving the consumer full ownership of category
+	 *   registration: the package's first write into the core registry is
+	 *   consumer-declinable per decision D2.
+	 *
+	 * Host API revisions that lack the categories functions entirely declare
+	 * nothing (their registry also does not enforce declarations).
+	 *
+	 * @return void
+	 */
+	private static function declare_categories(): void {
+		if ( ! (bool) apply_filters( self::CATEGORIES_FILTER, true ) ) {
+			return;
+		}
+
+		if ( ! function_exists( 'wp_register_ability_category' ) || ! function_exists( 'wp_has_ability_category' ) ) {
+			return;
+		}
+
+		if ( ! doing_action( 'wp_abilities_api_categories_init' ) ) {
+			// Cannot happen via the queued callback; guards a stray invocation
+			// from tripping the API's own outside-the-action doing-it-wrong.
+			return;
+		}
+
+		foreach ( Categories::required_slugs() as $category ) {
+			// Guarded no-op: the host (or another consumer) already provides it.
+			if ( wp_has_ability_category( $category ) ) {
+				continue;
+			}
+
+			$definition = Categories::definition( $category );
+			if ( null === $definition ) {
+				// No package definition: the declaration is impossible; Gate 8
+				// rejects the dependent abilities loudly instead.
+				continue;
+			}
+
+			wp_register_ability_category(
+				$category,
+				array(
+					// phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText -- single-sourced in Categories (mirrors core's default registration, text domain default).
+					'label'       => __( $definition['label'] ),
+					// phpcs:ignore WordPress.WP.I18n.NonSingularStringLiteralText -- single-sourced in Categories (mirrors core's default registration, text domain default).
+					'description' => __( $definition['description'] ),
+				)
+			);
+		}
+	}
+
+	/**
 	 * Gates and registers one ability.
 	 *
-	 * The gates run in order and skip silently on failure. Only the missing
-	 * API guard logs via _doing_it_wrong(); everything else is a non-event.
+	 * The gates run in order and skip silently on failure. The missing API
+	 * guard and — since P8 — a Gate-8 rejection whose reason is the missing
+	 * ability category log via _doing_it_wrong(); everything else is a
+	 * non-event.
 	 *
 	 * 1. Registered in this process already: idempotence.
 	 * 2. `wp_has_ability()`: core already provides the name (the core_since
@@ -207,7 +376,12 @@ final class Registrar {
 	 * 7. Support-surface `requires`: every feature must be available,
 	 *    attempting a polyfill load when one exists.
 	 * 8. Registration via the core `ability_class` mechanism, merging
-	 *    provenance meta (stability tier, renamed_from lineage).
+	 *    provenance meta (stability tier, renamed_from lineage). A null
+	 *    result from core when the ability's manifested category is not
+	 *    registered — the consumer opted out of the package's category
+	 *    declarations, or the categories action fired without declaring it —
+	 *    is made loud by a _doing_it_wrong() naming the missing category;
+	 *    other nulls (core already logged its own reason) stay silent.
 	 *
 	 * @param string               $name  The ability name.
 	 * @param array<string, mixed> $entry The manifest entry.
@@ -277,7 +451,33 @@ final class Registrar {
 		);
 
 		if ( null === $ability ) {
-			// Core rejected the registration and already logged why; stay silent.
+			/*
+			 * Core rejected the registration and logged its own reason (wrong
+			 * action, duplicate name, malformed args). The one rejection the
+			 * package can diagnose — and must make loud, because its sources are
+			 * states the consumer controls — is a missing ability category: the
+			 * manifest-declared category never got registered, e.g. the consumer
+			 * opted out of the package's declarations via CATEGORIES_FILTER, or
+			 * the categories action fired without ever having the Registrar's
+			 * declaring hook (see queue_category_declarations()). Name the
+			 * missing category instead of returning silently; every other
+			 * rejection stays quiet here since core already logged it.
+			 */
+			$category = is_string( $entry['category'] ) ? $entry['category'] : '';
+			if ( '' !== $category && ( ! function_exists( 'wp_has_ability_category' ) || ! wp_has_ability_category( $category ) ) ) {
+				_doing_it_wrong(
+					__METHOD__,
+					sprintf(
+						/* translators: %1$s: ability name, %2$s: ability category slug. */
+						__( 'The ability %1$s was not registered because its ability category %2$s is not registered. The package declares its manifest categories itself on the <code>wp_abilities_api_categories_init</code> action at priority 20 — unless the <code>%3$s</code> filter returns false, or the action has already fired (declared categories cannot be added outside of it). Either declare the category yourself during that action, or call the Registrar before the registry boots. The ability was not registered.' ),
+						'<code>' . esc_html( $name ) . '</code>',
+						'<code>' . esc_html( $category ) . '</code>',
+						self::CATEGORIES_FILTER
+					),
+					'6.9.0'
+				);
+			}
+
 			return false;
 		}
 

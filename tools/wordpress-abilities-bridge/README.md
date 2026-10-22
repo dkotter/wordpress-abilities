@@ -38,11 +38,20 @@ Then activate **WordPress Abilities Bridge** in wp-admin → Plugins.
    (`tests/Fixtures/abilities-api/`) as the API, mirroring the package's own
    test mu-plugin. On WP 7.1+/7.2+ core provides the API and this is a no-op.
    Opt out: `add_filter( 'wp_abilities_bridge_provide_api', '__return_false' );`
-4. **Registration** — `Registrar::register_all()` on `wp_abilities_api_init`
-   at priority 20 (after core's own ability registrations at 10, so
-   core-provided names self-skip). The registry is initialized eagerly on
-   `init`, so abilities are always registered no matter who touches the
-   registry first.
+4. **Registration** — `Registrar::register_all()` at plugin load, before
+   anything boots the registry: this queues the Registrar's category
+   declarations (only valid while `wp_abilities_api_categories_init`
+   fires) and defers the ability registrations itself. A
+   `wp_abilities_api_init` priority-20 hook remains as the fallback for APIs
+   provided later in the boot; the registry is initialized eagerly on
+   `init` so registration happens deterministically.
+5. **Categories** — the Registrar declares the manifest-declared categories
+   (`content`) on `wp_abilities_api_categories_init` at priority 20; no
+   category backfill is carried here. To own category registration yourself:
+   `add_filter( 'wordpress_abilities_declare_categories', '__return_false' )`,
+   then register them during the categories action.
+6. **Status**: an admin notice (manage_options) shows the resolved package
+   path, the API provider, and which manifest abilities registered.
 
 ## Share it with other testers
 

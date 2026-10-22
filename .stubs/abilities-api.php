@@ -80,6 +80,22 @@ namespace {
 	}
 
 	/**
+	 * Ability categories registry.
+	 *
+	 * @since 6.9.0
+	 * @access private
+	 */
+	final class WP_Ability_Categories_Registry {
+
+		/**
+		 * Retrieves the main categories registry instance.
+		 *
+		 * @return WP_Ability_Categories_Registry|null
+		 */
+		public static function get_instance() {}
+	}
+
+	/**
 	 * Abilities registry.
 	 *
 	 * @since 6.9.0

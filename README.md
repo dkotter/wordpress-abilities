@@ -49,9 +49,14 @@ package has no opinion.)*
    mechanism you use.
 2. **Register on your own gating and timing** — call
    `Registrar::register_all()` or `Registrar::register( 'core/content-query' )`
-   on `wp_abilities_api_init` or later. The Registrar is idempotent and
-   timing-aware, so late registration is safe. What exists is the manifest;
-   **when it's on is your policy**.
+   as early as your plugin has the API, typically at plugin load; the
+   Registrar is timing-aware and defers the registrations to
+   `wp_abilities_api_init` itself. One timing constraint: the Registrar
+   declares the manifest categories during `wp_abilities_api_categories_init`,
+   which fires *before* `wp_abilities_api_init` — so on hosts that lack
+   those categories (WordPress < 7.2), the first Registrar call must
+   precede the registry boot, i.e. before anything calls an abilities API
+   function. What exists is the manifest; **when it's on is your policy**.
 3. **Ship `vendor/` in your distribution** — don't require end-users to run
    Composer.
 

@@ -10,6 +10,7 @@ declare( strict_types = 1 );
 namespace WordPress\Abilities\Tests;
 
 use WordPress\Abilities\Abstract_Core_Ability;
+use WordPress\Abilities\Categories;
 use WordPress\Abilities\Manifest;
 use Yoast\PHPUnitPolyfills\TestCases\TestCase;
 
@@ -82,6 +83,29 @@ final class ManifestTest extends TestCase {
 				self::assertNotNull( $entry['proposal'], sprintf( 'Stable core/ %s must set proposal.', $name ) );
 			}
 			self::assertTrue( ! empty( $entry['min_wp_version'] ), sprintf( '%s must set min_wp_version.', $name ) );
+		}
+	}
+
+	/**
+	 * P8: every manifest-declared category is single-sourced in Categories.
+	 *
+	 * The Registrar derives the categories to declare from the manifest (the
+	 * `category` field of every entry) and declares them from the
+	 * Categories definition table. A manifest entry declaring a category
+	 * without a shipped definition would fail closed at declaration time and
+	 * then be rejected loudly per ability at Gate 8 — this test surfaces the
+	 * mismatch at manifest-rule level instead.
+	 */
+	public function test_manifest_categories_are_single_sourced(): void {
+		$required = Categories::required_slugs();
+		self::assertNotEmpty( $required, 'The manifest must declare at least one category.' );
+		self::assertSame( $required, array_values( array_unique( $required ) ), 'Derived category slugs must be unique.' );
+
+		foreach ( $required as $slug ) {
+			self::assertNotNull(
+				Categories::definition( $slug ),
+				sprintf( 'Manifest category %s has no single-sourced definition in Categories.', $slug )
+			);
 		}
 	}
 

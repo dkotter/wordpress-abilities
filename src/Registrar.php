@@ -308,7 +308,8 @@ final class Registrar {
 	 * - The opt-out filter (CATEGORIES_FILTER) declines the whole
 	 *   declaration, giving the consumer full ownership of category
 	 *   registration: the package's first write into the core registry is
-	 *   consumer-declinable per decision D2.
+	 *   consumer-declinable per decision D5 (registration is opt-in; when
+	 *   the package's behaviors run is consumer policy).
 	 *
 	 * Host API revisions that lack the categories functions entirely declare
 	 * nothing (their registry also does not enforce declarations).
@@ -377,8 +378,8 @@ final class Registrar {
 	 *    attempting a polyfill load when one exists.
 	 * 8. Registration via the core `ability_class` mechanism, merging
 	 *    provenance meta (stability tier, renamed_from lineage). A null
-	 *    result from core when the ability's manifested category is not
-	 *    registered — the consumer opted out of the package's category
+	 *    result from core when the ability's manifest-declared category is
+	 *    not registered — the consumer opted out of the package's category
 	 *    declarations, or the categories action fired without declaring it —
 	 *    is made loud by a _doing_it_wrong() naming the missing category;
 	 *    other nulls (core already logged its own reason) stay silent.
@@ -461,14 +462,17 @@ final class Registrar {
 			 * the categories action fired without ever having the Registrar's
 			 * declaring hook (see queue_category_declarations()). Name the
 			 * missing category instead of returning silently; every other
-			 * rejection stays quiet here since core already logged it.
+			 * rejection stays quiet here since core already logged it. That
+			 * includes API revisions without the category functions entirely:
+			 * their registry does not enforce category declarations, so a null
+			 * there is never a category rejection.
 			 */
 			$category = is_string( $entry['category'] ) ? $entry['category'] : '';
-			if ( '' !== $category && ( ! function_exists( 'wp_has_ability_category' ) || ! wp_has_ability_category( $category ) ) ) {
+			if ( '' !== $category && function_exists( 'wp_has_ability_category' ) && ! wp_has_ability_category( $category ) ) {
 				_doing_it_wrong(
 					__METHOD__,
 					sprintf(
-						/* translators: %1$s: ability name, %2$s: ability category slug. */
+						/* translators: %1$s: ability name, %2$s: ability category slug, %3$s: opt-out filter name. */
 						__( 'The ability %1$s was not registered because its ability category %2$s is not registered. The package declares its manifest categories itself on the <code>wp_abilities_api_categories_init</code> action at priority 20 — unless the <code>%3$s</code> filter returns false, or the action has already fired (declared categories cannot be added outside of it). Either declare the category yourself during that action, or call the Registrar before the registry boots. The ability was not registered.' ),
 						'<code>' . esc_html( $name ) . '</code>',
 						'<code>' . esc_html( $category ) . '</code>',

@@ -46,7 +46,7 @@ The entries below describe the current prototype state._
   `wordpress_abilities_declare_categories` filter (return false to own every
   category registration yourself).
 - Loud missing-category rejection: when `wp_register_ability()` returns null
-  for an ability whose manifested category is not registered — e.g. after
+  for an ability whose manifest-declared category is not registered — e.g. after
   opting out of the package's declarations, or when
   `wp_abilities_api_categories_init` has already fired without declaring the
   category — the Registrar now fires `_doing_it_wrong()` naming the missing

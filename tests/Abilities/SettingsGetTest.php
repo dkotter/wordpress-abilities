@@ -272,6 +272,15 @@ final class SettingsGetTest extends TestCase {
 		self::assertSame( array( 'open', 'closed' ), $output['properties']['default_comment_status']['enum'] );
 		self::assertSame( 'email', $output['properties']['email']['format'] );
 		self::assertSame( 'integer', $output['properties']['page_for_privacy_policy']['type'] );
+		self::assertSame(
+			array(
+				'type'        => 'string',
+				'description' => 'The URL where WordPress core files are served. May differ from the public site URL.',
+				'format'      => 'uri',
+			),
+			$output['properties']['url'],
+			"Trunk's 7.2 siteurl schema, key order included."
+		);
 	}
 
 	/**

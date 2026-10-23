@@ -374,8 +374,11 @@ final class Registrar {
 	 * 4. Consumer `filter` selection policy.
 	 * 5. WordPress version vs. the entry's min_wp_version support floor.
 	 * 6. `public_only`: probe the ability's own `public` meta.
-	 * 7. Support-surface `requires`: every feature must be available,
-	 *    attempting a polyfill load when one exists.
+	 * 7. Host readiness: every support-surface `requires` feature must be
+	 *    available, attempting a polyfill load when one exists; then the
+	 *    ability's own should_register() must agree, read on a probe
+	 *    instance once those features are in place (core's register()
+	 *    early return, e.g. nothing to expose).
 	 * 8. Registration via the core `ability_class` mechanism, merging
 	 *    provenance meta (stability tier, renamed_from lineage). A null
 	 *    result from core when the ability's manifest-declared category is
@@ -426,11 +429,17 @@ final class Registrar {
 			}
 		}
 
-		// Gate 7: support-surface features, with polyfill attempt.
+		// Gate 7: support-surface features, with polyfill attempt, then the
+		// ability's own registration-time readiness.
 		foreach ( (array) $entry['requires'] as $feature ) {
 			if ( ! Features::is_available( $feature ) && ! Features::load_polyfill( $feature ) ) {
 				return false;
 			}
+		}
+
+		$probe = new $entry['class']();
+		if ( ! $probe->should_register() ) {
+			return false;
 		}
 
 		// Gate 8: register via the core `ability_class` mechanism, merging

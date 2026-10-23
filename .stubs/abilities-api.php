@@ -11,9 +11,7 @@
  * 6.9 ( wordpress-develop trunk as of 2026-10-20: WP_Ability,
  * WP_Abilities_Registry, WP_Ability_Categories_Registry,
  * WP_Ability_Category, and the global API functions; the former test
- * fixture shim files these were once mirrored against are removed), plus
- * the 7.2 shape of get_registered_settings(), which the API's settings
- * abilities read.
+ * fixture shim files these were once mirrored against are removed).
  * Once phpstan-wordpress ships Abilities API stubs, delete this file and its
  * stubFiles entry.
  *
@@ -193,30 +191,5 @@ namespace {
 	 */
 	function wp_has_ability_category( string $slug ) {
 		return false;
-	}
-
-	/**
-	 * Retrieves an array of registered settings.
-	 *
-	 * Overrides the phpstan-wordpress shape, which predates 7.2: trunk's registered
-	 * setting data adds the `show_in_abilities` argument, and the `group` and `default`
-	 * keys are not always present. Mirrors trunk's wp-includes/option.php docblock.
-	 *
-	 * @since 4.7.0
-	 * @since 7.2.0 Registered setting data includes the `show_in_abilities` argument.
-	 *
-	 * @phpstan-return array<int|string, array{
-	 *   type: string,
-	 *   group?: string,
-	 *   label?: string,
-	 *   description?: string,
-	 *   sanitize_callback?: callable|null,
-	 *   show_in_rest: bool|array<string, mixed>,
-	 *   show_in_abilities?: bool|array<string, mixed>,
-	 *   default?: mixed,
-	 * }>
-	 */
-	function get_registered_settings() {
-		return array();
 	}
 }

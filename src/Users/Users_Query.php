@@ -2,6 +2,14 @@
 /**
  * Canonical WordPress abilities: `users` query ability.
  *
+ * Deviations from trunk, all authoring-surface wrapping only:
+ * - The registration entry points (register()/register_users_query() and the
+ *   wp_register_ability call) are decomposed into the Abstract_Core_Ability authoring
+ *   methods; the Registrar owns registration and provenance meta.
+ * - get_input_object() and parse_filter_int() are inherited from Abstract_Core_Ability
+ *   instead of declared here (identical bodies there), so the fail-closed helpers stay
+ *   single-sourced in the package.
+ *
  * @package WordPress\Abilities
  */
 declare( strict_types = 1 );

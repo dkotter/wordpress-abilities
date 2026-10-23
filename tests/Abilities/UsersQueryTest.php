@@ -149,7 +149,8 @@ final class UsersQueryTest extends TestCase {
 	/**
 	 * Creates the mocked users: an administrator, an editor, a subscriber, and
 	 * three authors, of whom one has a published post, one a published page,
-	 * and one only a draft.
+	 * and one only a draft. The post author's slug differs from their username,
+	 * so the slug and username filters cannot be mistaken for each other.
 	 */
 	private function create_mocked_users(): void {
 		foreach ( array( 'administrator', 'editor', 'subscriber' ) as $role ) {
@@ -164,13 +165,15 @@ final class UsersQueryTest extends TestCase {
 		}
 
 		foreach ( array( 'post_author', 'page_author', 'draft_author' ) as $name ) {
+			$login                   = 'uq' . str_replace( '_', '', $name );
 			$this->user_ids[ $name ] = (int) wp_insert_user(
 				array(
-					'user_login' => 'uq' . str_replace( '_', '', $name ),
-					'user_pass'  => wp_generate_password(),
-					'user_email' => 'uq' . str_replace( '_', '', $name ) . '@example.com',
-					'first_name' => 'First',
-					'role'       => 'author',
+					'user_login'    => $login,
+					'user_nicename' => 'post_author' === $name ? 'uq-post-slug' : $login,
+					'user_pass'     => wp_generate_password(),
+					'user_email'    => $login . '@example.com',
+					'first_name'    => 'First',
+					'role'          => 'author',
 				)
 			);
 		}
@@ -199,6 +202,29 @@ final class UsersQueryTest extends TestCase {
 	 */
 	private function author_ids(): array {
 		return array( $this->user_ids['post_author'], $this->user_ids['page_author'], $this->user_ids['draft_author'] );
+	}
+
+	/**
+	 * Creates more subscribers than the default page size holds.
+	 *
+	 * @param int $count How many to create.
+	 * @return list<int> Their IDs.
+	 */
+	private function create_extra_users( int $count ): array {
+		$ids = array();
+		for ( $i = 1; $i <= $count; $i++ ) {
+			$ids[]                          = (int) wp_insert_user(
+				array(
+					'user_login' => 'uqextra' . $i,
+					'user_pass'  => wp_generate_password(),
+					'user_email' => 'uqextra' . $i . '@example.com',
+					'role'       => 'subscriber',
+				)
+			);
+			$this->user_ids[ 'extra' . $i ] = end( $ids );
+		}
+
+		return $ids;
 	}
 
 	/**
@@ -356,6 +382,49 @@ final class UsersQueryTest extends TestCase {
 			)
 		);
 		self::assertSame( array( $this->user_ids['page_author'] ), self::item_ids( $pages_only ) );
+
+		foreach ( array( true, 'true' ) as $any ) {
+			$public_authors = $this->execute_raw(
+				array(
+					'where' => array(
+						'ids'                 => $this->author_ids(),
+						'has_published_posts' => $any,
+					),
+				)
+			);
+			self::assertSame(
+				array( $this->user_ids['post_author'], $this->user_ids['page_author'] ),
+				self::item_ids( $public_authors ),
+				'has_published_posts true matches authors of any publicly viewable post type.'
+			);
+		}
+	}
+
+	/**
+	 * The identifier and role filters select the matching users, by the right
+	 * user property each.
+	 */
+	public function test_execute_identifier_and_role_filters(): void {
+		$ability = $this->get_registered();
+		self::assertNotNull( $ability );
+		$this->create_mocked_users();
+		wp_set_current_user( $this->user_ids['administrator'] );
+
+		self::assertSame( array( $this->user_ids['post_author'] ), self::item_ids( $ability->execute( array( 'where' => array( 'slugs' => array( 'uq-post-slug' ) ) ) ) ) );
+		self::assertSame( array(), self::item_ids( $ability->execute( array( 'where' => array( 'slugs' => array( 'uqpostauthor' ) ) ) ) ), 'Slugs match the user slug, not the username.' );
+		self::assertSame( array( $this->user_ids['post_author'] ), self::item_ids( $ability->execute( array( 'where' => array( 'usernames' => array( 'uqpostauthor' ) ) ) ) ) );
+		self::assertSame( array(), self::item_ids( $ability->execute( array( 'where' => array( 'usernames' => array( 'uq-post-slug' ) ) ) ) ), 'Usernames match the username, not the user slug.' );
+
+		$mocked  = array_values( $this->user_ids );
+		$authors = $ability->execute(
+			array(
+				'where' => array(
+					'ids'   => $mocked,
+					'roles' => array( 'author' ),
+				),
+			)
+		);
+		self::assertSame( $this->author_ids(), self::item_ids( $authors ), 'The roles filter keeps the authors and leaves out the other roles.' );
 	}
 
 	/**
@@ -368,7 +437,7 @@ final class UsersQueryTest extends TestCase {
 		$this->create_mocked_users();
 		$input = array(
 			'where'  => array( 'ids' => array( $this->user_ids['post_author'] ) ),
-			'fields' => array( 'email', 'first_name', 'roles' ),
+			'fields' => array( 'username', 'email', 'first_name', 'registered_date', 'roles' ),
 		);
 
 		wp_set_current_user( $this->user_ids['subscriber'] );
@@ -378,12 +447,16 @@ final class UsersQueryTest extends TestCase {
 
 		wp_set_current_user( $this->user_ids['post_author'] );
 		$self = $ability->execute( $input )['items'][0];
+		self::assertSame( 'uqpostauthor', $self['username'] );
 		self::assertSame( 'uqpostauthor@example.com', $self['email'] );
 		self::assertSame( 'First', $self['first_name'] );
+		self::assertMatchesRegularExpression( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00$/', $self['registered_date'] );
 		self::assertSame( array( 'author' ), $self['roles'] );
 
 		wp_set_current_user( $this->user_ids['administrator'] );
-		self::assertSame( 'uqpostauthor@example.com', $ability->execute( $input )['items'][0]['email'] );
+		$admin_view = $ability->execute( $input )['items'][0];
+		self::assertSame( 'uqpostauthor', $admin_view['username'] );
+		self::assertSame( 'uqpostauthor@example.com', $admin_view['email'] );
 
 		$default  = $ability->execute( array( 'where' => array( 'ids' => array( $this->user_ids['post_author'] ) ) ) )['items'][0];
 		$expected = get_option( 'show_avatars' ) ? array( 'id', 'name', 'link', 'slug', 'avatar_urls' ) : array( 'id', 'name', 'link', 'slug' );
@@ -391,7 +464,8 @@ final class UsersQueryTest extends TestCase {
 	}
 
 	/**
-	 * Pagination: totals, the ID-list default page size, and a page past the end.
+	 * Pagination: totals, the default page sizes (10, or every listed user for
+	 * an identifier list), and a page past the end.
 	 */
 	public function test_execute_pagination(): void {
 		$ability = $this->get_registered();
@@ -415,8 +489,16 @@ final class UsersQueryTest extends TestCase {
 			$page['pagination']
 		);
 
-		$all = $ability->execute( array( 'where' => array( 'ids' => $this->author_ids() ) ) );
-		self::assertCount( 3, $all['items'], 'An ID list returns every match on the first page by default.' );
+		$listed = array_merge( $this->author_ids(), $this->create_extra_users( 9 ) );
+		$all    = $ability->execute( array( 'where' => array( 'ids' => $listed ) ) );
+		self::assertIsArray( $all );
+		self::assertCount( 12, $all['items'], 'An ID list returns every match on the first page by default, past the plain default of 10.' );
+		self::assertSame( 1, $all['pagination']['total_pages'] );
+
+		$plain = $ability->execute( array() );
+		self::assertIsArray( $plain );
+		self::assertCount( 10, $plain['items'], 'Without an identifier list, a page holds 10 users by default.' );
+		self::assertSame( (int) ceil( $plain['pagination']['total'] / 10 ), $plain['pagination']['total_pages'] );
 
 		$this->assert_wp_error(
 			'users_invalid_page_number',
@@ -447,10 +529,22 @@ final class UsersQueryTest extends TestCase {
 		$this->assert_wp_error( 'ability_invalid_input', $ability->execute( array( 'fields' => array( 'password' ) ) ) );
 		$this->assert_wp_error( 'ability_invalid_input', $ability->execute( array( 'unknown' => true ) ) );
 
-		$this->assert_wp_error( 'users_invalid_filter', $this->execute_raw( array( 'where' => 'nope' ) ) );
+		$not_object = $this->execute_raw( array( 'where' => 'nope' ) );
+		$this->assert_wp_error( 'users_invalid_filter', $not_object );
+		self::assertSame(
+			array(
+				'status' => 400,
+				'params' => array( 'where' => 'The where filter must be an object.' ),
+			),
+			$not_object->get_error_data()
+		);
 		$this->assert_wp_error( 'users_invalid_filter', $this->execute_raw( array( 'where' => array( 'ids' => array( 'abc', 0 ) ) ) ) );
 		$this->assert_wp_error( 'users_invalid_filter', $this->execute_raw( array( 'where' => array( 'roles' => array() ) ) ) );
 		$this->assert_wp_error( 'users_invalid_filter', $this->execute_raw( array( 'where' => array( 'has_published_posts' => false ) ) ) );
+
+		// A where that is not an object passes the permission check, so execute can report it.
+		wp_set_current_user( $this->user_ids['subscriber'] );
+		self::assertTrue( $ability->check_permissions( array( 'where' => 'nope' ) ) );
 
 		// A direct call skips the permission callback; the role and username filters still fail closed.
 		wp_set_current_user( $this->user_ids['editor'] );

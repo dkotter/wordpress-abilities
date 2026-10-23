@@ -914,4 +914,102 @@ final class RegistrarTest extends TestCase {
 		self::assertSame( array(), $registrar_traffic, 'P8: the restored boot registers without any Registrar wrong-usage traffic.' );
 		self::reset_wrong_usage();
 	}
+
+	/**
+	 * 10. Gate 7 readiness: an ability whose should_register() declines (core's
+	 * register() early return, e.g. nothing to expose) is skipped silently and
+	 * never reaches the registry, once its support-surface features pass.
+	 */
+	public function test_readiness_gate_skips_declining_ability(): void {
+		$declining = new class() extends Abstract_Core_Ability {
+
+			/**
+			 * The full ability name, including its tier prefix.
+			 */
+			protected function ability_name(): string {
+				return 'test/registrar-declining';
+			}
+
+			/**
+			 * The human-readable ability label.
+			 */
+			protected function label(): string {
+				return 'Registrar test declining ability';
+			}
+
+			/**
+			 * A detailed description of what the ability does.
+			 */
+			protected function description(): string {
+				return 'Synthetic ability whose readiness check declines registration. Never ships in the manifest.';
+			}
+
+			/**
+			 * The ability category slug.
+			 */
+			protected function category_slug(): string {
+				return 'content';
+			}
+
+			/**
+			 * The JSON Schema definition for the ability's input.
+			 */
+			protected function input_schema(): array {
+				return array();
+			}
+
+			/**
+			 * The JSON Schema definition for the ability's output.
+			 */
+			protected function output_schema(): array {
+				return array();
+			}
+
+			/**
+			 * Builds the execute callback.
+			 */
+			protected function make_execute_callback(): callable {
+				return static function (): array {
+					return array();
+				};
+			}
+
+			/**
+			 * No permission callback: the floor owns authorization.
+			 */
+			protected function make_permission_callback(): ?callable {
+				return null;
+			}
+
+			/**
+			 * The ability meta.
+			 */
+			protected function ability_meta(): array {
+				return array( 'public' => true );
+			}
+
+			/**
+			 * The request-level capability floor.
+			 */
+			protected function required_capabilities(): array {
+				return array( 'manage_options' );
+			}
+
+			/**
+			 * Declines registration, as core's register() returns early.
+			 */
+			public function should_register(): bool {
+				return false;
+			}
+		};
+
+		$entry          = self::synthetic_entry();
+		$entry['name']  = 'test/registrar-declining';
+		$entry['class'] = get_class( $declining );
+
+		self::reset_wrong_usage();
+		self::assertFalse( self::try_register_entry( 'test/registrar-declining', $entry ), 'A declining ability is skipped.' );
+		self::assertFalse( wp_has_ability( 'test/registrar-declining' ), 'A declining ability never reaches the registry.' );
+		self::assert_no_wrong_usage( 'The readiness skip is silent.' );
+	}
 }

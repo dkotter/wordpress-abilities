@@ -18,6 +18,11 @@
  *   trunk. This polyfill injects that same default through the
  *   `register_setting_args` filter, and catches up the ones registered before
  *   it loaded.
+ * - Trunk also rewrote the `siteurl` description in 7.2. The polyfill gives
+ *   that setting an equivalent `show_in_abilities` array instead of `true`,
+ *   carrying trunk's description, so the ability's schema matches trunk while
+ *   the host's own registration, and its REST settings schema, stay as they
+ *   are.
  * - Trunk registers `wp_page_for_privacy_policy` in register_initial_settings()
  *   since 7.2, exposed as `page_for_privacy_policy`. Older hosts do not
  *   register it at all, so the polyfill registers it for abilities only:
@@ -26,11 +31,12 @@
  *   in trunk's place among the registered settings.
  * - Core registers its initial settings on `rest_api_init`, which fires
  *   lazily and independently of `wp_abilities_api_init`. Trunk registers them
- *   early through _wp_register_initial_settings_for_abilities(), restoring
- *   `$new_allowed_options` so the options screens are not affected. This
- *   polyfill does the same when it loads, which is during
- *   `wp_abilities_api_init`, before the requiring ability takes its
- *   exposed-settings snapshot.
+ *   early through _wp_register_initial_settings_for_abilities(), at priority 1
+ *   of `wp_abilities_api_init`, restoring `$new_allowed_options` so the
+ *   options screens are not affected. This polyfill does the same when it
+ *   loads, which for a deferred registration is that same priority (see
+ *   Registrar::queue_feature_preloads()), before the requiring ability takes
+ *   its exposed-settings snapshot.
  *
  * Loading: through require_once, only from the Registrar (via
  * Support\Features) when an ability requires the feature and core lacks it.
@@ -47,34 +53,42 @@
 
 /**
  * The settings trunk's register_initial_settings() flags with
- * `show_in_abilities`, keyed by option name, in trunk's order.
+ * `show_in_abilities`, keyed by option name, in trunk's order, each with the
+ * `show_in_abilities` value the polyfill gives it.
  *
  * Keep in sync with trunk when a fixture refresh changes the list.
  */
 $wordpress_abilities_exposed_core_settings = array(
 	// General.
-	'blogname',
-	'blogdescription',
-	'siteurl',
-	'admin_email',
-	'timezone_string',
-	'date_format',
-	'time_format',
-	'start_of_week',
-	'WPLANG',
+	'blogname'                   => true,
+	'blogdescription'            => true,
+	// Trunk's 7.2 description; the host's show_in_rest name and schema, restated.
+	'siteurl'                    => array(
+		'name'   => 'url',
+		'schema' => array(
+			'format'      => 'uri',
+			'description' => __( 'The URL where WordPress core files are served. May differ from the public site URL.' ),
+		),
+	),
+	'admin_email'                => true,
+	'timezone_string'            => true,
+	'date_format'                => true,
+	'time_format'                => true,
+	'start_of_week'              => true,
+	'WPLANG'                     => true,
 	// Writing.
-	'use_smilies',
-	'default_category',
-	'default_post_format',
+	'use_smilies'                => true,
+	'default_category'           => true,
+	'default_post_format'        => true,
 	// Reading.
-	'posts_per_page',
-	'show_on_front',
-	'page_on_front',
-	'page_for_posts',
-	'wp_page_for_privacy_policy',
+	'posts_per_page'             => true,
+	'show_on_front'              => true,
+	'page_on_front'              => true,
+	'page_for_posts'             => true,
+	'wp_page_for_privacy_policy' => true,
 	// Discussion.
-	'default_ping_status',
-	'default_comment_status',
+	'default_ping_status'        => true,
+	'default_comment_status'     => true,
 );
 
 /**
@@ -94,8 +108,8 @@ $wordpress_abilities_setting_show_in_abilities_polyfill = static function ( $arg
 		return $args;
 	}
 
-	if ( in_array( $option_name, $wordpress_abilities_exposed_core_settings, true ) ) {
-		$args['show_in_abilities'] = true;
+	if ( isset( $wordpress_abilities_exposed_core_settings[ $option_name ] ) ) {
+		$args['show_in_abilities'] = $wordpress_abilities_exposed_core_settings[ $option_name ];
 	}
 
 	return $args;
@@ -110,14 +124,14 @@ unset( $wordpress_abilities_setting_show_in_abilities_polyfill );
  * the registered setting is never overridden.
  */
 if ( isset( $GLOBALS['wp_registered_settings'] ) && is_array( $GLOBALS['wp_registered_settings'] ) ) {
-	foreach ( $wordpress_abilities_exposed_core_settings as $polyfill_option_name ) {
+	foreach ( $wordpress_abilities_exposed_core_settings as $polyfill_option_name => $polyfill_show ) {
 		if ( isset( $GLOBALS['wp_registered_settings'][ $polyfill_option_name ] )
 			&& is_array( $GLOBALS['wp_registered_settings'][ $polyfill_option_name ] )
 			&& ! array_key_exists( 'show_in_abilities', $GLOBALS['wp_registered_settings'][ $polyfill_option_name ] ) ) {
-			$GLOBALS['wp_registered_settings'][ $polyfill_option_name ]['show_in_abilities'] = true;
+			$GLOBALS['wp_registered_settings'][ $polyfill_option_name ]['show_in_abilities'] = $polyfill_show;
 		}
 	}
-	unset( $polyfill_option_name );
+	unset( $polyfill_option_name, $polyfill_show );
 }
 unset( $wordpress_abilities_exposed_core_settings );
 

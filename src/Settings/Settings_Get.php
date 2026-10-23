@@ -26,7 +26,7 @@ final class Settings_Get extends Abstract_Core_Ability {
 	/**
 	 * The ability category used for settings abilities.
 	 *
-	 * @since x.x.x
+	 * @since 7.2.0
 	 * @var string
 	 */
 	private const CATEGORY = 'site';
@@ -34,7 +34,7 @@ final class Settings_Get extends Abstract_Core_Ability {
 	/**
 	 * Settings exposed through the Abilities API, computed once at registration.
 	 *
-	 * @since x.x.x
+	 * @since 7.2.0
 	 * @var array<string, array{option: string, group: string, default: mixed, schema: array<string, mixed>}>
 	 */
 	private $exposed_settings = array();
@@ -161,7 +161,7 @@ final class Settings_Get extends Abstract_Core_Ability {
 	/**
 	 * Executes the `core/settings-get` ability.
 	 *
-	 * @since x.x.x
+	 * @since 7.2.0
 	 *
 	 * @param mixed $input Optional. The ability input. Default empty array.
 	 * @return array<string, mixed> Map of exposed setting name to current value.
@@ -218,7 +218,10 @@ final class Settings_Get extends Abstract_Core_Ability {
 	/**
 	 * Builds the input schema for the `core/settings-get` ability: optional filters by group and/or name.
 	 *
-	 * @since x.x.x
+	 * Both `group` and `fields` are optional; supplying both narrows the response to their
+	 * intersection, and supplying neither returns every exposed setting.
+	 *
+	 * @since 7.2.0
 	 *
 	 * @param list<string> $groups      Available settings groups.
 	 * @param list<string> $field_names Available exposed setting names.
@@ -251,7 +254,10 @@ final class Settings_Get extends Abstract_Core_Ability {
 	/**
 	 * Builds the output schema for the `core/settings-get` ability.
 	 *
-	 * @since x.x.x
+	 * No setting is marked required because the `group` and `fields` inputs let the caller
+	 * request any subset, and a setting whose value does not match its schema is left out.
+	 *
+	 * @since 7.2.0
 	 *
 	 * @return array<string, mixed> The output JSON Schema.
 	 */
@@ -267,7 +273,14 @@ final class Settings_Get extends Abstract_Core_Ability {
 	/**
 	 * Returns the settings exposed through the Abilities API.
 	 *
-	 * @since x.x.x
+	 * Reads {@see get_registered_settings()} and keeps only settings flagged with a truthy
+	 * `show_in_abilities` argument, of a type the settings endpoint supports. Each entry is
+	 * keyed by its exposed name and carries the underlying option name, the settings group,
+	 * the registered default (null when there is none), and a JSON Schema describing the value.
+	 *
+	 * Two settings exposed under the same name trigger a notice, and the later one is exposed.
+	 *
+	 * @since 7.2.0
 	 *
 	 * @return array<string, array{option: string, group: string, default: mixed, schema: array<string, mixed>}> Settings keyed by exposed name.
 	 */
@@ -317,7 +330,11 @@ final class Settings_Get extends Abstract_Core_Ability {
 	/**
 	 * Returns the name and schema overrides used to expose a setting to abilities.
 	 *
-	 * @since x.x.x
+	 * When `show_in_abilities` is `true`, the setting is exposed the same way as in the
+	 * REST API: it uses the `name` and `schema` from `show_in_rest`. An array is used
+	 * as is.
+	 *
+	 * @since 7.2.0
 	 *
 	 * @param array<string, mixed> $args The setting registration arguments.
 	 * @return array<string, mixed> The exposure arguments, with optional `name` and `schema` keys.
@@ -333,7 +350,10 @@ final class Settings_Get extends Abstract_Core_Ability {
 	/**
 	 * Builds the JSON Schema describing a single setting's value.
 	 *
-	 * @since x.x.x
+	 * As in the settings endpoint, objects in the schema reject properties they do not declare,
+	 * unless the schema allows them.
+	 *
+	 * @since 7.2.0
 	 *
 	 * @param array<string, mixed> $args The setting registration arguments.
 	 * @param array<string, mixed> $show The exposure arguments, see get_exposure_args().
